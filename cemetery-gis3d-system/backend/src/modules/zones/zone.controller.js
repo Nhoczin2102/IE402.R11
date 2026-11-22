@@ -1,6 +1,7 @@
 const zoneService = require('./zone.service');
 const asyncHandler = require('../../utils/asyncHandler');
 const { sendSuccess } = require('../../utils/apiResponse');
+const { spatialCache } = require('../../utils/memoryCache');
 
 const getAllZones = asyncHandler(async (req, res) => {
   const format = req.query.format === 'geojson' ? 'geojson' : 'json';
@@ -12,12 +13,30 @@ const getAllZones = asyncHandler(async (req, res) => {
 });
 
 const getAllZonesCapacity = asyncHandler(async (req, res) => {
+  const cacheKey = 'zones:capacity:all';
+  const cached = spatialCache.get(cacheKey);
+  if (cached) {
+    res.setHeader('X-Cache', 'HIT');
+    return sendSuccess(res, cached);
+  }
+
   const report = await zoneService.computeZoneCapacityReport();
+  spatialCache.set(cacheKey, report);
+  res.setHeader('X-Cache', 'MISS');
   return sendSuccess(res, report);
 });
 
 const getZoneCapacityById = asyncHandler(async (req, res) => {
+  const cacheKey = `zones:capacity:${req.params.ma_phan_khu}`;
+  const cached = spatialCache.get(cacheKey);
+  if (cached) {
+    res.setHeader('X-Cache', 'HIT');
+    return sendSuccess(res, cached);
+  }
+
   const report = await zoneService.computeZoneCapacityReport(req.params.ma_phan_khu);
+  spatialCache.set(cacheKey, report);
+  res.setHeader('X-Cache', 'MISS');
   return sendSuccess(res, report);
 });
 

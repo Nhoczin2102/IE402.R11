@@ -5,10 +5,12 @@ const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 
 const { env } = require('./config/env');
+const requestIdMiddleware = require('./middlewares/requestId');
 const requestLogger = require('./middlewares/requestLogger');
 const notFoundHandler = require('./middlewares/notFoundHandler');
 const errorHandler = require('./middlewares/errorHandler');
 const healthRoutes = require('./modules/health/health.routes');
+const docsRoutes = require('./modules/docs/docs.routes');
 const apiRoutes = require('./modules');
 
 const app = express();
@@ -17,15 +19,19 @@ const app = express();
 app.use(helmet());
 app.use(compression());
 
-// 2. Cấu hình CORS cho Frontend React/Next.js
+// 2. Gắn X-Request-Id cho mọi request để truy vết log & lỗi
+app.use(requestIdMiddleware);
+
+// 3. Cấu hình CORS cho Frontend React/Next.js
 app.use(
   cors({
     origin: env.corsOrigin === '*' ? true : env.corsOrigin.split(',').map((s) => s.trim()),
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    exposedHeaders: ['X-Request-Id', 'X-Cache'],
   })
 );
 
-// 3. Giới hạn tần suất truy cập chống spam API
+// 4. Giới hạn tần suất truy cập chống spam API
 const apiLimiter = rateLimit({
   windowMs: env.rateLimit.windowMs,
   limit: env.rateLimit.max,
@@ -38,15 +44,16 @@ const apiLimiter = rateLimit({
   },
 });
 
-// 4. Parse JSON body & ghi log request
+// 5. Parse JSON body & ghi log request có cấu trúc
 app.use(express.json({ limit: '1mb' }));
 app.use(requestLogger);
 
-// 5. Gắn các nhóm tuyến đường
+// 6. Gắn các nhóm tuyến đường
+app.use('/', docsRoutes);
 app.use('/health', healthRoutes);
 app.use('/api', apiLimiter, apiRoutes);
 
-// 6. Xử lý 404 & lỗi tập trung
+// 7. Xử lý 404 & lỗi tập trung
 app.use(notFoundHandler);
 app.use(errorHandler);
 

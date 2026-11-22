@@ -14,13 +14,17 @@ const errorHandler = (err, req, res, next) => {
       : normalizedError.message || 'Đã xảy ra lỗi không xác định.';
 
   if (statusCode >= 500) {
-    console.error(`[ERROR ${statusCode}] ${req.method} ${req.originalUrl}:`, err);
+    console.error(
+      `[ERROR ${statusCode}] [${req.requestId || '-'}] ${req.method} ${req.originalUrl}:`,
+      err
+    );
   }
 
   const responseBody = {
     success: false,
     code,
     error: message,
+    requestId: req.requestId || undefined,
   };
 
   if (normalizedError.details) {

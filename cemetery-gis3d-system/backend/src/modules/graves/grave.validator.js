@@ -1,15 +1,60 @@
 const { z } = require('zod');
 const { GRAVE_STATUS, VALID_GRAVE_STATUSES } = require('../../constants/cemeteryConstants');
 
+const bboxSchema = z
+  .string()
+  .trim()
+  .refine(
+    (value) => {
+      const parts = value.split(',').map(Number);
+      return (
+        parts.length === 4 &&
+        parts.every((n) => Number.isFinite(n)) &&
+        parts[0] < parts[2] &&
+        parts[1] < parts[3]
+      );
+    },
+    { message: 'bbox phải theo định dạng "minX,minZ,maxX,maxZ" với minX < maxX và minZ < maxZ' }
+  );
+
 const listGravesQuerySchema = z.object({
   ma_phan_khu: z.string().trim().min(1).max(20).optional(),
   trang_thai: z.enum(VALID_GRAVE_STATUSES).optional(),
   search: z.string().trim().max(100).optional(),
   format: z.enum(['json', 'geojson']).optional(),
+  bbox: bboxSchema.optional(),
+  lod: z.coerce.number().int().min(1).max(3).optional(),
 });
 
 const graveParamSchema = z.object({
   ma_lo_dat: z.string().trim().min(1, 'Mã lô đất không được để trống').max(30),
+});
+
+const createGraveBodySchema = z.object({
+  ma_lo_dat: z
+    .string()
+    .trim()
+    .min(2, 'Mã lô đất tối thiểu 2 ký tự')
+    .max(30)
+    .regex(/^[A-Za-z0-9_-]+$/, 'Mã lô đất chỉ được chứa chữ, số, dấu gạch ngang hoặc gạch dưới'),
+  ma_phan_khu: z.string().trim().min(1, 'Thiếu mã phân khu').max(20),
+  ma_mau_mo: z.string().trim().min(1, 'Thiếu mã mẫu mộ 3D').max(20),
+  vi_tri_hang_o: z.string().trim().min(1, 'Thiếu vị trí hàng/ô').max(50),
+  toa_do_x: z.coerce.number({ invalid_type_error: 'toa_do_x phải là số thực' }),
+  toa_do_z: z.coerce.number({ invalid_type_error: 'toa_do_z phải là số thực' }),
+  cao_do_z: z.coerce.number().optional(),
+  goc_xoay_z: z.coerce.number().min(0).max(360).optional().default(0),
+  do_sau_huyet: z.coerce.number().positive().max(10).optional().default(2.0),
+  surfaces_sudm: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        surfaceType: z.enum(['GroundSurface', 'WallSurface', 'RoofSurface']),
+        label: z.string().min(1),
+        areaM2: z.number().nonnegative(),
+      })
+    )
+    .optional(),
 });
 
 const allocateGraveBodySchema = z.object({
@@ -50,6 +95,7 @@ const updateGraveBodySchema = z
 module.exports = {
   listGravesQuerySchema,
   graveParamSchema,
+  createGraveBodySchema,
   allocateGraveBodySchema,
   updateGraveBodySchema,
 };

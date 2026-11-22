@@ -1,6 +1,7 @@
 const topologyService = require('./topology.service');
 const asyncHandler = require('../../utils/asyncHandler');
 const { sendSuccess } = require('../../utils/apiResponse');
+const { spatialCache } = require('../../utils/memoryCache');
 
 const checkGraveTopology = asyncHandler(async (req, res) => {
   const report = await topologyService.inspectGraveTopology(
@@ -11,7 +12,16 @@ const checkGraveTopology = asyncHandler(async (req, res) => {
 });
 
 const auditCemeteryTopology = asyncHandler(async (req, res) => {
+  const cacheKey = 'topology:audit:all';
+  const cached = spatialCache.get(cacheKey);
+  if (cached) {
+    res.setHeader('X-Cache', 'HIT');
+    return sendSuccess(res, cached);
+  }
+
   const audit = await topologyService.runFullTopologyAudit();
+  spatialCache.set(cacheKey, audit);
+  res.setHeader('X-Cache', 'MISS');
   return sendSuccess(res, audit);
 });
 

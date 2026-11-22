@@ -1,11 +1,12 @@
 {
   "name": "cemetery-gis3d-backend",
-  "version": "2.0.0",
-  "description": "Backend REST API 3-tier (Controller-Service-Repository) cho Hệ thống Quy hoạch Nghĩa trang Đô thị GIS 3D (IE402.R11)",
+  "version": "2.1.0",
+  "description": "Backend REST API 3-tier Modular (Controller-Service-Repository) cho Hệ thống Quy hoạch Nghĩa trang Đô thị GIS 3D (IE402.R11)",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
+    "test": "node --test tests/*.test.js",
     "check": "node --check src/server.js && node --check src/app.js"
   },
   "dependencies": {

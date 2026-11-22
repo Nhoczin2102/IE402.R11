@@ -13,6 +13,15 @@ const getGraveById = asyncHandler(async (req, res) => {
   return sendSuccess(res, grave);
 });
 
+const createGrave = asyncHandler(async (req, res) => {
+  const created = await graveService.createGraveWithTopologyCheck(req.body);
+  return res.status(201).json({
+    success: true,
+    message: `Đã quy hoạch lô mộ 3D "${created.ma_lo_dat}" hợp lệ về Topology.`,
+    data: created,
+  });
+});
+
 const allocateGrave = asyncHandler(async (req, res) => {
   const allocated = await graveService.allocateGrave(req.body);
   return res.status(201).json({
@@ -43,6 +52,7 @@ const exportGravesCsv = asyncHandler(async (req, res) => {
 module.exports = {
   getAllGraves,
   getGraveById,
+  createGrave,
   allocateGrave,
   updateGrave,
   exportGravesCsv,
