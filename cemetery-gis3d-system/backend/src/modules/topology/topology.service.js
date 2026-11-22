@@ -1,5 +1,5 @@
-const topologyRepository = require('../repositories/topologyRepository');
-const AppError = require('../utils/AppError');
+const topologyRepository = require('./topology.repository');
+const AppError = require('../../utils/AppError');
 
 /**
  * Kiểm tra đầy đủ Topology 3D cho một lô mộ cụ thể:

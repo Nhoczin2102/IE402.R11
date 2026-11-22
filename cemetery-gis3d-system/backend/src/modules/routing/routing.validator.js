@@ -1,5 +1,5 @@
 const { z } = require('zod');
-const { DEFAULT_NETWORK_NODES } = require('../constants/cemeteryConstants');
+const { DEFAULT_NETWORK_NODES } = require('../../constants/cemeteryConstants');
 
 const validStartNodes = Object.keys(DEFAULT_NETWORK_NODES);
 

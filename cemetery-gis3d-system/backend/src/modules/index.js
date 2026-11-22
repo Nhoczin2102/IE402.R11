@@ -1,8 +1,8 @@
 const express = require('express');
-const graveRoutes = require('./graveRoutes');
-const zoneRoutes = require('./zoneRoutes');
-const topologyRoutes = require('./topologyRoutes');
-const routingRoutes = require('./routingRoutes');
+const graveRoutes = require('./graves/grave.routes');
+const zoneRoutes = require('./zones/zone.routes');
+const topologyRoutes = require('./topology/topology.routes');
+const routingRoutes = require('./routing/routing.routes');
 
 const router = express.Router();
 

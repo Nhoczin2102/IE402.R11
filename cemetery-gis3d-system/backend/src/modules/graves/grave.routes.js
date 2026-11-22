@@ -1,12 +1,12 @@
 const express = require('express');
-const graveController = require('../controllers/graveController');
-const validateRequest = require('../middlewares/validateRequest');
+const graveController = require('./grave.controller');
+const validateRequest = require('../../middlewares/validateRequest');
 const {
   listGravesQuerySchema,
   graveParamSchema,
   allocateGraveBodySchema,
   updateGraveBodySchema,
-} = require('../validators/graveValidator');
+} = require('./grave.validator');
 
 const router = express.Router();
 

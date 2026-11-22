@@ -1,8 +1,8 @@
-const db = require('../config/database');
-const graveRepository = require('../repositories/graveRepository');
-const { GRAVE_STATUS } = require('../constants/cemeteryConstants');
-const AppError = require('../utils/AppError');
-const { toGeoJsonFeatureCollection } = require('../utils/apiResponse');
+const db = require('../../config/database');
+const graveRepository = require('./grave.repository');
+const { GRAVE_STATUS } = require('../../constants/cemeteryConstants');
+const AppError = require('../../utils/AppError');
+const { toGeoJsonFeatureCollection } = require('../../utils/apiResponse');
 
 const formatGraveRow = (row) => ({
   ma_lo_dat: row.ma_lo_dat,

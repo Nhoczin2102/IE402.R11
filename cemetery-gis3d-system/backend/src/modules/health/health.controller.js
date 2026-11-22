@@ -1,5 +1,5 @@
-const { checkDatabaseHealth } = require('../config/database');
-const asyncHandler = require('../utils/asyncHandler');
+const { checkDatabaseHealth } = require('../../config/database');
+const asyncHandler = require('../../utils/asyncHandler');
 
 const getLiveness = (req, res) =>
   res.status(200).json({

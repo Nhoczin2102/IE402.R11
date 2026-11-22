@@ -1,7 +1,7 @@
-const zoneRepository = require('../repositories/zoneRepository');
-const infrastructureRepository = require('../repositories/infrastructureRepository');
-const AppError = require('../utils/AppError');
-const { toGeoJsonFeatureCollection } = require('../utils/apiResponse');
+const zoneRepository = require('./zone.repository');
+const infrastructureRepository = require('./infrastructure.repository');
+const AppError = require('../../utils/AppError');
+const { toGeoJsonFeatureCollection } = require('../../utils/apiResponse');
 
 const listZones = async (format = 'json') => {
   const rows = await zoneRepository.findAllZones();

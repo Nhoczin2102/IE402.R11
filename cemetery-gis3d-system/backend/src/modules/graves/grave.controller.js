@@ -1,6 +1,6 @@
-const graveService = require('../services/graveService');
-const asyncHandler = require('../utils/asyncHandler');
-const { sendSuccess } = require('../utils/apiResponse');
+const graveService = require('./grave.service');
+const asyncHandler = require('../../utils/asyncHandler');
+const { sendSuccess } = require('../../utils/apiResponse');
 
 // Giữ nguyên định dạng mảng JSON mặc định để tương thích 100% với Frontend hiện tại
 const getAllGraves = asyncHandler(async (req, res) => {

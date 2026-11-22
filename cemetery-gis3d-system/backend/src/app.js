@@ -8,8 +8,8 @@ const { env } = require('./config/env');
 const requestLogger = require('./middlewares/requestLogger');
 const notFoundHandler = require('./middlewares/notFoundHandler');
 const errorHandler = require('./middlewares/errorHandler');
-const healthRoutes = require('./routes/healthRoutes');
-const apiRoutes = require('./routes');
+const healthRoutes = require('./modules/health/health.routes');
+const apiRoutes = require('./modules');
 
 const app = express();
 

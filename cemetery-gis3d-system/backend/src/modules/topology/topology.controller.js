@@ -1,6 +1,6 @@
-const topologyService = require('../services/topologyService');
-const asyncHandler = require('../utils/asyncHandler');
-const { sendSuccess } = require('../utils/apiResponse');
+const topologyService = require('./topology.service');
+const asyncHandler = require('../../utils/asyncHandler');
+const { sendSuccess } = require('../../utils/apiResponse');
 
 const checkGraveTopology = asyncHandler(async (req, res) => {
   const report = await topologyService.inspectGraveTopology(

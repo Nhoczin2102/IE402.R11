@@ -1,10 +1,10 @@
 const express = require('express');
-const topologyController = require('../controllers/topologyController');
-const validateRequest = require('../middlewares/validateRequest');
+const topologyController = require('./topology.controller');
+const validateRequest = require('../../middlewares/validateRequest');
 const {
   topologyCheckParamSchema,
   nearbyGravesQuerySchema,
-} = require('../validators/topologyValidator');
+} = require('./topology.validator');
 
 const router = express.Router();
 

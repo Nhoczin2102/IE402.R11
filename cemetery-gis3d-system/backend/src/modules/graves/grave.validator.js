@@ -1,5 +1,5 @@
 const { z } = require('zod');
-const { GRAVE_STATUS, VALID_GRAVE_STATUSES } = require('../constants/cemeteryConstants');
+const { GRAVE_STATUS, VALID_GRAVE_STATUSES } = require('../../constants/cemeteryConstants');
 
 const listGravesQuerySchema = z.object({
   ma_phan_khu: z.string().trim().min(1).max(20).optional(),

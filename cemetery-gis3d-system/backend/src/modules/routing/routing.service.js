@@ -1,9 +1,9 @@
 const {
   DEFAULT_NETWORK_NODES,
   DEFAULT_NETWORK_EDGES,
-} = require('../constants/cemeteryConstants');
-const { getTerrainHeight, distance3D } = require('../utils/terrainMath');
-const routingRepository = require('../repositories/routingRepository');
+} = require('../../constants/cemeteryConstants');
+const { getTerrainHeight, distance3D } = require('../../utils/terrainMath');
+const routingRepository = require('./routing.repository');
 
 /**
  * Tính đường đi ngắn nhất trong không gian 3D bằng thuật toán Dijkstra

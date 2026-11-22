@@ -1,7 +1,7 @@
 const express = require('express');
-const routingController = require('../controllers/routingController');
-const validateRequest = require('../middlewares/validateRequest');
-const { shortestPathQuerySchema } = require('../validators/routingValidator');
+const routingController = require('./routing.controller');
+const validateRequest = require('../../middlewares/validateRequest');
+const { shortestPathQuerySchema } = require('./routing.validator');
 
 const router = express.Router();
 

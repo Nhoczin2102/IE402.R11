@@ -1,6 +1,6 @@
-const zoneService = require('../services/zoneService');
-const asyncHandler = require('../utils/asyncHandler');
-const { sendSuccess } = require('../utils/apiResponse');
+const zoneService = require('./zone.service');
+const asyncHandler = require('../../utils/asyncHandler');
+const { sendSuccess } = require('../../utils/apiResponse');
 
 const getAllZones = asyncHandler(async (req, res) => {
   const format = req.query.format === 'geojson' ? 'geojson' : 'json';

@@ -1,4 +1,4 @@
-const db = require('../config/database');
+const db = require('../../config/database');
 
 /**
  * Truy vấn các tuyến đường 3D từ bảng tuyen_giao_thong để phục vụ phân tích mạng lưới.

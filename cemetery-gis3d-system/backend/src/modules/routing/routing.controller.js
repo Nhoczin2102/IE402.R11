@@ -1,5 +1,5 @@
-const routingService = require('../services/routingService');
-const asyncHandler = require('../utils/asyncHandler');
+const routingService = require('./routing.service');
+const asyncHandler = require('../../utils/asyncHandler');
 
 // Giữ nguyên cấu trúc phẳng (routePath, distanceMeters...) để tương thích trực tiếp Frontend
 const findShortestRoute3D = asyncHandler(async (req, res) => {
