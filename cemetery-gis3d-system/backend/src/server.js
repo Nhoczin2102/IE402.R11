@@ -1,19 +1,56 @@
-// backend/src/server.js
-const express = require('express');
-const cors = require('cors');
-require('dotenv').config();
+const { env, validateEnv } = require('./config/env');
+const { checkDatabaseHealth, closePool } = require('./config/database');
+const app = require('./app');
 
-const apiRoutes = require('./routes/api');
+let server;
 
-const app = express();
-const PORT = process.env.PORT || 5000;
+const startServer = async () => {
+  validateEnv();
 
-app.use(cors());
-app.use(express.json());
-app.use('/api', apiRoutes);
+  try {
+    const dbInfo = await checkDatabaseHealth();
+    console.log(`[PostgreSQL] Kết nối thành công — PostGIS: ${dbInfo.postgis_version}`);
+  } catch (err) {
+    console.warn(
+      `[PostgreSQL] Cảnh báo: Chưa kết nối được CSDL khi khởi động (${err.message}). Máy chủ vẫn chạy để kiểm tra /health.`
+    );
+  }
 
-app.get('/health', (req, res) => res.json({ status: 'OK', service: 'WebGIS 3D Backend' }));
+  server = app.listen(env.port, () => {
+    console.log(
+      `[WebGIS 3D Backend] Đang chạy (${env.nodeEnv}) tại http://localhost:${env.port}`
+    );
+  });
+};
 
-app.listen(PORT, () => {
-  console.log(`Backend WebGIS 3D đang chạy tại http://localhost:${PORT}`);
+const gracefulShutdown = async (signal) => {
+  console.log(`\n[Shutdown] Nhận tín hiệu ${signal}. Đang đóng kết nối an toàn...`);
+
+  const forceExitTimer = setTimeout(() => {
+    console.error('[Shutdown] Quá thời gian chờ, buộc dừng tiến trình.');
+    process.exit(1);
+  }, 10000);
+  forceExitTimer.unref();
+
+  try {
+    if (server) {
+      await new Promise((resolve, reject) => {
+        server.close((err) => (err ? reject(err) : resolve()));
+      });
+    }
+    await closePool();
+    console.log('[Shutdown] Đã đóng HTTP server và PostgreSQL Pool sạch sẽ.');
+    process.exit(0);
+  } catch (err) {
+    console.error('[Shutdown] Lỗi khi đóng kết nối:', err);
+    process.exit(1);
+  }
+};
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+startServer().catch((err) => {
+  console.error('[Startup Error]', err.message);
+  process.exit(1);
 });
