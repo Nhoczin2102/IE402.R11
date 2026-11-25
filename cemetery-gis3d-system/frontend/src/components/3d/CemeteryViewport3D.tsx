@@ -10,7 +10,10 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { GraveLot } from '../../types/cemetery';
 import { SharedGraveAssets, createSharedGraveAssets, disposeGroup } from './utils/threeHelpers';
+import { bindViewportInteractions, MeasureResult } from './utils/viewportInteraction';
+import { useViewportTheme } from './hooks/useViewportTheme';
 import {
+  getTerrainHeight,
   addSceneLighting,
   createTerrainMesh,
   updateTerrainAppearance,
@@ -27,7 +30,7 @@ interface CemeteryViewport3DProps {
   slopeHeatmap: boolean;
   showSubsurface: boolean;
   measureMode?: boolean;
-  onMeasureResult?: (result: { distance3D: number; deltaZ: number; from: string; to: string } | null) => void;
+  onMeasureResult?: (result: MeasureResult | null) => void;
   routePath: [number, number, number][] | null;
   cameraPreset: 'overview' | 'top' | 'reset';
 }
@@ -101,7 +104,7 @@ export const CemeteryViewport3D: React.FC<CemeteryViewport3DProps> = ({
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.15;
+    renderer.toneMappingExposure = 1.05;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     container.appendChild(renderer.domElement);
     rendererRef.current = renderer;
@@ -109,19 +112,17 @@ export const CemeteryViewport3D: React.FC<CemeteryViewport3DProps> = ({
     const pmremGenerator = new THREE.PMREMGenerator(renderer);
     const envRT = pmremGenerator.fromScene(new RoomEnvironment(), 0.04);
     scene.environment = envRT.texture;
-    scene.environmentIntensity = 0.65;
+    scene.environmentIntensity = 0.55;
     pmremGenerator.dispose();
 
     const composer = new EffectComposer(renderer);
     composer.setSize(width, height);
     composer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
-    const renderPass = new RenderPass(scene, camera);
-    const bloomPass = new UnrealBloomPass(new THREE.Vector2(width, height), 0.42, 0.35, 0.82);
-    const outputPass = new OutputPass();
-    composer.addPass(renderPass);
+    const bloomPass = new UnrealBloomPass(new THREE.Vector2(width, height), 0.35, 0.3, 0.9);
+    composer.addPass(new RenderPass(scene, camera));
     composer.addPass(bloomPass);
-    composer.addPass(outputPass);
+    composer.addPass(new OutputPass());
     bloomPassRef.current = bloomPass;
 
     sharedRef.current = createSharedGraveAssets();
@@ -154,80 +155,18 @@ export const CemeteryViewport3D: React.FC<CemeteryViewport3DProps> = ({
     routeGroupRef.current = routeGroup;
     measureGroupRef.current = measureGroup;
 
-    const raycaster = new THREE.Raycaster();
-    const mouse = new THREE.Vector2();
-
-    const getHitGraveUnit = (clientX: number, clientY: number): THREE.Group | null => {
-      const rect = renderer.domElement.getBoundingClientRect();
-      mouse.x = ((clientX - rect.left) / rect.width) * 2 - 1;
-      mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
-      raycaster.setFromCamera(mouse, camera);
-      const intersects = raycaster.intersectObjects(gravesGroup.children, true);
-      if (intersects.length === 0) return null;
-      let hitObj: THREE.Object3D | null = intersects[0].object;
-      while (hitObj && !hitObj.userData?.graveData) {
-        hitObj = hitObj.parent;
-      }
-      return hitObj ? (hitObj as THREE.Group) : null;
-    };
-
-    const handlePointerMove = (event: PointerEvent) => {
-      const unit = getHitGraveUnit(event.clientX, event.clientY);
-      hoveredUnitRef.current = unit;
-      if (unit) {
-        renderer.domElement.style.cursor = measureModeRef.current ? 'crosshair' : 'pointer';
-      } else {
-        renderer.domElement.style.cursor = measureModeRef.current ? 'crosshair' : 'grab';
-      }
-    };
-
-    const handlePointerDown = (event: PointerEvent) => {
-      const clickedGrave: GraveLot | undefined = getHitGraveUnit(event.clientX, event.clientY)?.userData?.graveData;
-      if (!clickedGrave) return;
-
-      if (measureModeRef.current) {
-        const pts = measurePointsRef.current;
-        if (pts.length >= 2) pts.length = 0;
-        pts.push(clickedGrave);
-
-        if (sharedRef.current) {
-          disposeGroup(measureGroup, sharedRef.current.geoSet, sharedRef.current.matSet);
-        }
-
-        pts.forEach((g) => {
-          const marker = new THREE.Mesh(
-            new THREE.SphereGeometry(0.42, 20, 20),
-            new THREE.MeshBasicMaterial({ color: '#f43f5e' })
-          );
-          marker.position.set(g.position[0], g.position[1] + 1.2, g.position[2]);
-          measureGroup.add(marker);
-        });
-
-        if (pts.length === 2) {
-          const [p1, p2] = pts;
-          const v1 = new THREE.Vector3(p1.position[0], p1.position[1] + 1.2, p1.position[2]);
-          const v2 = new THREE.Vector3(p2.position[0], p2.position[1] + 1.2, p2.position[2]);
-          measureGroup.add(
-            new THREE.Line(
-              new THREE.BufferGeometry().setFromPoints([v1, v2]),
-              new THREE.LineBasicMaterial({ color: '#fb7185' })
-            )
-          );
-          onMeasureResultRef.current?.({
-            distance3D: Number(v1.distanceTo(v2).toFixed(2)),
-            deltaZ: Number((p2.cao_do_z - p1.cao_do_z).toFixed(2)),
-            from: p1.ma_lo_dat,
-            to: p2.ma_lo_dat,
-          });
-        }
-        return;
-      }
-
-      onSelectGraveRef.current(clickedGrave);
-    };
-
-    renderer.domElement.addEventListener('pointermove', handlePointerMove);
-    renderer.domElement.addEventListener('pointerdown', handlePointerDown);
+    const unbindInteractions = bindViewportInteractions({
+      renderer,
+      camera,
+      gravesGroup,
+      measureGroup,
+      hoveredUnitRef,
+      sharedRef,
+      measureModeRef,
+      measurePointsRef,
+      onSelectGraveRef,
+      onMeasureResultRef,
+    });
 
     const resizeObserver = new ResizeObserver((entries) => {
       for (const entry of entries) {
@@ -282,8 +221,7 @@ export const CemeteryViewport3D: React.FC<CemeteryViewport3DProps> = ({
 
     return () => {
       resizeObserver.disconnect();
-      renderer.domElement.removeEventListener('pointermove', handlePointerMove);
-      renderer.domElement.removeEventListener('pointerdown', handlePointerDown);
+      unbindInteractions();
       cancelAnimationFrame(animId);
       envRT.dispose();
       composer.dispose();
@@ -298,45 +236,7 @@ export const CemeteryViewport3D: React.FC<CemeteryViewport3DProps> = ({
     };
   }, []);
 
-  useEffect(() => {
-    const scene = sceneRef.current;
-    const renderer = rendererRef.current;
-    const bloomPass = bloomPassRef.current;
-    if (!scene || !renderer || !bloomPass) return;
-
-    if (isNight) {
-      scene.background = new THREE.Color('#060d1f');
-      scene.fog = new THREE.FogExp2('#060d1f', 0.0042);
-      scene.environmentIntensity = 0.55;
-      renderer.toneMappingExposure = 1.05;
-      bloomPass.strength = 0.35;
-      bloomPass.threshold = 0.9;
-      bloomPass.radius = 0.3;
-    } else {
-      scene.background = new THREE.Color('#bae6fd');
-      scene.fog = new THREE.FogExp2('#e0f2fe', 0.0018);
-      scene.environmentIntensity = 0.4;
-      renderer.toneMappingExposure = 0.88;
-      bloomPass.strength = 0;
-      bloomPass.threshold = 1.5;
-      bloomPass.radius = 0;
-    }
-
-    scene.children.forEach((obj) => {
-      if (obj instanceof THREE.HemisphereLight) {
-        obj.intensity = isNight ? 0.75 : 0.75;
-        obj.color.set(isNight ? '#dbeafe' : '#f0f9ff');
-        obj.groundColor.set(isNight ? '#0f172a' : '#334155');
-      } else if (obj instanceof THREE.DirectionalLight) {
-        if (obj.castShadow) {
-          obj.intensity = isNight ? 1.35 : 1.45;
-          obj.color.set(isNight ? '#fffbeb' : '#ffffff');
-        } else {
-          obj.intensity = isNight ? 0.55 : 0.3;
-        }
-      }
-    });
-  }, [isNight]);
+  useViewportTheme(isNight, sceneRef, rendererRef, bloomPassRef);
 
   useEffect(() => {
     if (terrainMeshRef.current) {
@@ -377,7 +277,8 @@ export const CemeteryViewport3D: React.FC<CemeteryViewport3DProps> = ({
 
   useEffect(() => {
     if (selectedGrave && !measureMode) {
-      const [gx, gy, gz] = selectedGrave.position;
+      const [gx, , gz] = selectedGrave.position;
+      const gy = getTerrainHeight(gx, gz);
       targetFlyPos.current = {
         pos: new THREE.Vector3(gx + 9, gy + 11, gz + 13),
         target: new THREE.Vector3(gx, gy + 0.5, gz),
