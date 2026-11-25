@@ -11,7 +11,7 @@ import { CapacityDashboard } from '../components/ui/CapacityDashboard';
 import { AllocateModal } from '../components/ui/AllocateModal';
 
 const CemeteryViewport3D = dynamic(
-  () => import('../components/gis3d/CemeteryViewport3D').then((mod) => mod.CemeteryViewport3D),
+  () => import('../components/3d/CemeteryViewport3D').then((mod) => mod.CemeteryViewport3D),
   { ssr: false }
 );
 

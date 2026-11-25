@@ -1,55 +1,53 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+import { GraveLot } from '../types/cemetery';
+import { INITIAL_GRAVES, getTerrainHeight } from '../data/mockCemeteryData';
 
-export interface ZoneCapacityItem {
-  ma_phan_khu: string;
-  ten_phan_khu: string;
-  dien_tich_con_lai_m2: number;
-  thong_ke_lo_hien_huu: {
-    tong_so_lo: number;
-    so_lo_trong: number;
-    ty_le_lap_day_phan_tram: number;
-  };
-  suc_chua_quy_hoach: {
-    suc_chua_con_lai_uoc_tinh: number;
-  };
-}
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
 
-export interface TopologyAuditData {
-  hop_le_toan_khu: boolean;
-  tong_so_vi_pham: number;
-  vi_pham_chua_trong_phan_khu: unknown[];
-  vi_pham_chong_lap_lo_mo: unknown[];
-  vi_pham_vung_dem_ha_tang: unknown[];
-}
+export const cemeteryApi = {
+  // Lấy danh sách lô mộ 3D từ PostGIS (Fallback về mock data nếu BE offline)
+  async fetchGraves(): Promise<{ data: GraveLot[]; isLiveBackend: boolean }> {
+    try {
+      const res = await fetch(`${API_BASE_URL}/graves`, { cache: 'no-store' });
+      if (!res.ok) throw new Error('Backend response error');
+      const data: GraveLot[] = await res.json();
+      return { data, isLiveBackend: true };
+    } catch {
+      return { data: INITIAL_GRAVES, isLiveBackend: false };
+    }
+  },
 
-export interface LiveTopologyReport {
-  hop_le_tong_the: boolean;
-  containment: { hop_le: boolean };
-  adjacency: {
-    so_lo_lan_can: number;
-    khoang_cach_gan_nhat_m: number | null;
-    co_vi_pham: boolean;
-  };
-  infrastructure_buffer: { co_vi_pham: boolean };
-}
+  // Gửi yêu cầu cấp phát mộ mới xuống PostgreSQL
+  async allocateGrave(payload: {
+    ma_lo_dat: string;
+    trang_thai: 'Đã an táng' | 'Đã đặt trước';
+    ho_ten: string;
+    thong_tin_than_nhan: string;
+  }): Promise<boolean> {
+    try {
+      const res = await fetch(`${API_BASE_URL}/graves/allocate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  },
 
-export async function fetchZonesCapacity(): Promise<ZoneCapacityItem[]> {
-  const res = await fetch(`${API_BASE}/api/zones/capacity`);
-  if (!res.ok) return [];
-  const json = await res.json();
-  return json?.data?.zones || [];
-}
-
-export async function fetchTopologyAudit(): Promise<TopologyAuditData | null> {
-  const res = await fetch(`${API_BASE}/api/topology/audit`);
-  if (!res.ok) return null;
-  const json = await res.json();
-  return json?.data || null;
-}
-
-export async function fetchGraveTopology(maLoDat: string, radius = 10): Promise<LiveTopologyReport | null> {
-  const res = await fetch(`${API_BASE}/api/topology/graves/${encodeURIComponent(maLoDat)}?radius=${radius}`);
-  if (!res.ok) return null;
-  const json = await res.json();
-  return json?.data || null;
-}
+  // Gọi API tính đường dẫn 3D ngắn nhất từ Cổng chính
+  async getShortestRoute3D(targetX: number, targetZ: number): Promise<[number, number, number][]> {
+    try {
+      const res = await fetch(`${API_BASE_URL}/routing/shortest-path?targetX=${targetX}&targetZ=${targetZ}`);
+      if (!res.ok) throw new Error('Routing API error');
+      const json = await res.json();
+      return json.routePath;
+    } catch {
+      // Fallback tính toán trực tiếp trên Client
+      const gatePoint: [number, number, number] = [0, getTerrainHeight(0, 42), 42];
+      const midJunction: [number, number, number] = [0, getTerrainHeight(0, targetZ), targetZ];
+      const targetPoint: [number, number, number] = [targetX, getTerrainHeight(targetX, targetZ), targetZ];
+      return [gatePoint, midJunction, targetPoint];
+    }
+  },
+};

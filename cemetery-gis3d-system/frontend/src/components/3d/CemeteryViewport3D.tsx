@@ -89,7 +89,7 @@ export const CemeteryViewport3D: React.FC<CemeteryViewport3DProps> = ({
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.18;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -217,11 +217,14 @@ export const CemeteryViewport3D: React.FC<CemeteryViewport3DProps> = ({
     });
     resizeObserver.observe(container);
 
-    const clock = new THREE.Clock();
+    let lastTime = performance.now();
+    let elapsed = 0;
     let animId: number;
-    const animate = () => {
+    const animate = (now: number) => {
       animId = requestAnimationFrame(animate);
-      const delta = Math.min(clock.getDelta(), 0.05);
+      const delta = Math.min((now - lastTime) / 1000, 0.05);
+      lastTime = now;
+      elapsed += delta;
 
       if (targetFlyPos.current) {
         const alpha = 1 - Math.exp(-5.5 * delta);
@@ -233,14 +236,14 @@ export const CemeteryViewport3D: React.FC<CemeteryViewport3DProps> = ({
       }
 
       if (selectionRingRef.current) {
-        const pulse = 1 + Math.sin(clock.getElapsedTime() * 4) * 0.06;
+        const pulse = 1 + Math.sin(elapsed * 4) * 0.06;
         selectionRingRef.current.scale.set(pulse, pulse, 1);
       }
 
       controls.update();
       renderer.render(scene, camera);
     };
-    animate();
+    animId = requestAnimationFrame(animate);
 
     return () => {
       resizeObserver.disconnect();

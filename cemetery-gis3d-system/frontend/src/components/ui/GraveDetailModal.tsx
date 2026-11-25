@@ -14,13 +14,25 @@ import {
   Check,
 } from 'lucide-react';
 import { GraveLot } from '../../types/cemetery';
-import { LiveTopologyReport, fetchGraveTopology } from '../../services/gisAnalyticsApi';
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
 interface GraveDetailDrawerProps {
   grave: GraveLot | null;
   onClose: () => void;
   onOpenAllocate: () => void;
   onUpdateStatus: (lotCode: string, newStatus: 'Trống' | 'Đã an táng') => void;
+}
+
+interface LiveTopologyReport {
+  hop_le_tong_the: boolean;
+  containment: { hop_le: boolean };
+  adjacency: {
+    so_lo_lan_can: number;
+    khoang_cach_gan_nhat_m: number | null;
+    co_vi_pham: boolean;
+  };
+  infrastructure_buffer: { co_vi_pham: boolean };
 }
 
 export const GraveDetailDrawer: React.FC<GraveDetailDrawerProps> = ({
@@ -38,9 +50,12 @@ export const GraveDetailDrawer: React.FC<GraveDetailDrawerProps> = ({
     }
 
     let cancelled = false;
-    fetchGraveTopology(grave.ma_lo_dat, 10)
-      .then((data) => {
-        if (!cancelled) setLiveTopo(data);
+    fetch(`${API_BASE}/api/topology/graves/${encodeURIComponent(grave.ma_lo_dat)}?radius=10`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json) => {
+        if (!cancelled && json?.data) {
+          setLiveTopo(json.data);
+        }
       })
       .catch(() => {
         if (!cancelled) setLiveTopo(null);
@@ -186,4 +201,59 @@ export const GraveDetailDrawer: React.FC<GraveDetailDrawerProps> = ({
                   <span className="font-mono text-[11px] text-emerald-300 font-semibold">{sf.surfaceType}</span>
                   <div className="text-[10px] text-slate-400">{sf.label}</div>
                 </div>
-                <span className="font-mono text-slate-300 tabular-nums">{
+                <span className="font-mono text-slate-300 tabular-nums">{sf.areaM2} m²</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div
+          className={`rounded-xl px-3.5 py-3 border space-y-2 ${
+            isTopoValid
+              ? 'bg-emerald-950/30 border-emerald-500/30'
+              : 'bg-rose-950/30 border-rose-500/30'
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              {isTopoValid ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+              ) : (
+                <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+              )}
+              <span className={isTopoValid ? 'text-emerald-300 font-medium' : 'text-rose-300 font-medium'}>
+                Topology 3D (Cách gần nhất {nearestDist}m)
+              </span>
+            </div>
+            <span className={`font-bold text-[11px] ${isTopoValid ? 'text-emerald-400' : 'text-rose-400'}`}>
+              {isTopoValid ? 'HỢP LỆ' : 'VI PHẠM'}
+            </span>
+          </div>
+
+          {liveTopo && (
+            <div className="grid grid-cols-3 gap-1.5 pt-1 text-center text-[10px] tabular-nums">
+              <div className="bg-slate-950/60 rounded-lg py-1">
+                <div className="text-slate-400">Trong khu</div>
+                <div className={liveTopo.containment.hop_le ? 'text-emerald-400 font-semibold' : 'text-rose-400 font-semibold'}>
+                  {liveTopo.containment.hop_le ? 'Đạt' : 'Lỗi'}
+                </div>
+              </div>
+              <div className="bg-slate-950/60 rounded-lg py-1">
+                <div className="text-slate-400">Lân cận</div>
+                <div className={!liveTopo.adjacency.co_vi_pham ? 'text-emerald-400 font-semibold' : 'text-rose-400 font-semibold'}>
+                  {liveTopo.adjacency.so_lo_lan_can} lô
+                </div>
+              </div>
+              <div className="bg-slate-950/60 rounded-lg py-1">
+                <div className="text-slate-400">Vùng đệm</div>
+                <div className={!liveTopo.infrastructure_buffer.co_vi_pham ? 'text-emerald-400 font-semibold' : 'text-rose-400 font-semibold'}>
+                  {!liveTopo.infrastructure_buffer.co_vi_pham ? 'An toàn' : 'Xâm phạm'}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
