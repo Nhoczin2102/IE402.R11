@@ -13,42 +13,50 @@ export const CapacityDashboard: React.FC<CapacityDashboardProps> = ({ graves }) 
   const fillPercent = total > 0 ? Math.round(((occupied + reserved) / total) * 100) : 0;
 
   return (
-    <div className="absolute left-5 bottom-5 bg-slate-900/90 backdrop-blur-xl border border-slate-700/80 rounded-2xl px-5 py-3.5 shadow-2xl flex items-center gap-6 text-xs text-slate-200 z-10">
+    <div className="absolute left-5 bottom-5 bg-slate-950/80 backdrop-blur-2xl border border-white/10 ring-1 ring-inset ring-white/5 rounded-2xl px-5 py-3.5 shadow-[0_20px_50px_rgba(0,0,0,0.6)] flex items-center gap-5 text-xs text-slate-200 z-10 select-none">
       <div>
-        <div className="text-slate-400 text-[11px]">Tổng quỹ đất quy hoạch</div>
-        <div className="text-base font-extrabold text-white mt-0.5">{total} Lô mộ</div>
+        <div className="text-slate-400 text-[10px] uppercase tracking-wider font-medium">Tổng quỹ đất</div>
+        <div className="text-base font-bold text-white mt-0.5 tabular-nums">{total} lô</div>
       </div>
 
-      <div className="h-8 w-px bg-slate-800" />
+      <div className="h-9 w-px bg-white/10" />
 
-      <div>
-        <div className="text-slate-400 text-[11px]">Đã sử dụng / Đặt trước</div>
-        <div className="flex items-center gap-2 mt-0.5">
-          <span className="text-base font-extrabold text-amber-400">{occupied + reserved} lô</span>
-          <span className="text-[11px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded font-mono">{fillPercent}%</span>
+      <div className="min-w-[130px]">
+        <div className="flex items-center justify-between text-[10px] uppercase tracking-wider font-medium text-slate-400">
+          <span>Tỷ lệ lấp đầy</span>
+          <span className="text-amber-300 font-mono font-semibold tabular-nums">{fillPercent}%</span>
+        </div>
+        <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden mt-1.5">
+          <div
+            className="h-full bg-gradient-to-r from-amber-500 to-orange-400 rounded-full transition-all duration-500"
+            style={{ width: `${fillPercent}%` }}
+          />
+        </div>
+        <div className="text-[10px] text-slate-400 mt-1 tabular-nums">
+          {occupied} an táng · {reserved} đặt trước
         </div>
       </div>
 
-      <div className="h-8 w-px bg-slate-800" />
+      <div className="h-9 w-px bg-white/10" />
 
       <div>
-        <div className="text-slate-400 text-[11px]">Quỹ đất trống khả dụng</div>
-        <div className="text-base font-extrabold text-emerald-400 mt-0.5">{available} Lô</div>
+        <div className="text-slate-400 text-[10px] uppercase tracking-wider font-medium">Khả dụng</div>
+        <div className="text-base font-bold text-emerald-400 mt-0.5 tabular-nums">{available} lô</div>
       </div>
 
-      {/* Chú giải màu sắc 3D */}
-      <div className="h-8 w-px bg-slate-800" />
+      <div className="h-9 w-px bg-white/10" />
+
       <div className="space-y-1 text-[11px]">
-        <div className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500 inline-block" />
+        <div className="flex items-center gap-2">
+          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.7)]" />
           <span className="text-slate-300">Còn trống</span>
         </div>
-        <div className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-sm bg-amber-500 inline-block" />
+        <div className="flex items-center gap-2">
+          <span className="w-2.5 h-2.5 rounded-full bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.7)]" />
           <span className="text-slate-300">Đặt trước</span>
         </div>
-        <div className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-sm bg-slate-500 inline-block" />
+        <div className="flex items-center gap-2">
+          <span className="w-2.5 h-2.5 rounded-full bg-slate-400" />
           <span className="text-slate-300">Đã an táng</span>
         </div>
       </div>
