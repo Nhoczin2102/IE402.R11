@@ -1,6 +1,8 @@
 const { Pool } = require('pg');
 const { env } = require('./env');
 
+const isLocal = env.db.host === 'localhost' || env.db.host === '127.0.0.1';
+
 const pool = new Pool({
   host: env.db.host,
   port: env.db.port,
@@ -10,6 +12,7 @@ const pool = new Pool({
   max: env.db.max,
   idleTimeoutMillis: env.db.idleTimeoutMillis,
   connectionTimeoutMillis: env.db.connectionTimeoutMillis,
+  ssl: isLocal ? false : { rejectUnauthorized: false },
 });
 
 pool.on('error', (err) => {
