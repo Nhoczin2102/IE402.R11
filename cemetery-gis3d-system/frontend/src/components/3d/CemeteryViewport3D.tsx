@@ -1,8 +1,13 @@
 'use client';
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { GraveLot } from '../../types/cemetery';
 import { SharedGraveAssets, createSharedGraveAssets, disposeGroup } from './utils/threeHelpers';
 import {
@@ -39,8 +44,12 @@ export const CemeteryViewport3D: React.FC<CemeteryViewport3DProps> = ({
   routePath,
   cameraPreset,
 }) => {
+  const [isNight, setIsNight] = useState(true);
+
   const containerRef = useRef<HTMLDivElement>(null);
+  const sceneRef = useRef<THREE.Scene | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+  const bloomPassRef = useRef<UnrealBloomPass | null>(null);
   const terrainMeshRef = useRef<THREE.Mesh | null>(null);
   const gravesGroupRef = useRef<THREE.Group | null>(null);
   const routeGroupRef = useRef<THREE.Group | null>(null);
@@ -81,6 +90,7 @@ export const CemeteryViewport3D: React.FC<CemeteryViewport3DProps> = ({
     const scene = new THREE.Scene();
     scene.background = new THREE.Color('#060d1f');
     scene.fog = new THREE.FogExp2('#060d1f', 0.0042);
+    sceneRef.current = scene;
 
     const camera = new THREE.PerspectiveCamera(42, width / height, 0.2, 600);
     camera.position.set(0, 44, 64);
@@ -91,18 +101,36 @@ export const CemeteryViewport3D: React.FC<CemeteryViewport3DProps> = ({
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.18;
+    renderer.toneMappingExposure = 1.15;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     container.appendChild(renderer.domElement);
     rendererRef.current = renderer;
+
+    const pmremGenerator = new THREE.PMREMGenerator(renderer);
+    const envRT = pmremGenerator.fromScene(new RoomEnvironment(), 0.04);
+    scene.environment = envRT.texture;
+    scene.environmentIntensity = 0.65;
+    pmremGenerator.dispose();
+
+    const composer = new EffectComposer(renderer);
+    composer.setSize(width, height);
+    composer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+    const renderPass = new RenderPass(scene, camera);
+    const bloomPass = new UnrealBloomPass(new THREE.Vector2(width, height), 0.42, 0.35, 0.82);
+    const outputPass = new OutputPass();
+    composer.addPass(renderPass);
+    composer.addPass(bloomPass);
+    composer.addPass(outputPass);
+    bloomPassRef.current = bloomPass;
 
     sharedRef.current = createSharedGraveAssets();
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
-    controls.dampingFactor = 0.07;
-    controls.rotateSpeed = 0.75;
-    controls.zoomSpeed = 0.9;
+    controls.dampingFactor = 0.05;
+    controls.rotateSpeed = 0.72;
+    controls.zoomSpeed = 0.88;
     controls.maxPolarAngle = Math.PI / 2 - 0.04;
     controls.minDistance = 8;
     controls.maxDistance = 135;
@@ -145,12 +173,8 @@ export const CemeteryViewport3D: React.FC<CemeteryViewport3DProps> = ({
 
     const handlePointerMove = (event: PointerEvent) => {
       const unit = getHitGraveUnit(event.clientX, event.clientY);
-      if (hoveredUnitRef.current && hoveredUnitRef.current !== unit) {
-        hoveredUnitRef.current.scale.set(1, 1, 1);
-      }
       hoveredUnitRef.current = unit;
       if (unit) {
-        unit.scale.set(1.04, 1.04, 1.04);
         renderer.domElement.style.cursor = measureModeRef.current ? 'crosshair' : 'pointer';
       } else {
         renderer.domElement.style.cursor = measureModeRef.current ? 'crosshair' : 'grab';
@@ -212,6 +236,8 @@ export const CemeteryViewport3D: React.FC<CemeteryViewport3DProps> = ({
           camera.aspect = w / h;
           camera.updateProjectionMatrix();
           renderer.setSize(w, h);
+          composer.setSize(w, h);
+          bloomPass.resolution.set(w, h);
         }
       }
     });
@@ -235,13 +261,22 @@ export const CemeteryViewport3D: React.FC<CemeteryViewport3DProps> = ({
         }
       }
 
+      const hoverAlpha = 1 - Math.exp(-12 * delta);
+      gravesGroup.children.forEach((child) => {
+        const targetScale = child === hoveredUnitRef.current ? 1.05 : 1;
+        const nextScale = THREE.MathUtils.lerp(child.scale.x, targetScale, hoverAlpha);
+        if (Math.abs(child.scale.x - targetScale) > 0.0005) {
+          child.scale.set(nextScale, nextScale, nextScale);
+        }
+      });
+
       if (selectionRingRef.current) {
         const pulse = 1 + Math.sin(elapsed * 4) * 0.06;
         selectionRingRef.current.scale.set(pulse, pulse, 1);
       }
 
       controls.update();
-      renderer.render(scene, camera);
+      composer.render();
     };
     animId = requestAnimationFrame(animate);
 
@@ -250,6 +285,8 @@ export const CemeteryViewport3D: React.FC<CemeteryViewport3DProps> = ({
       renderer.domElement.removeEventListener('pointermove', handlePointerMove);
       renderer.domElement.removeEventListener('pointerdown', handlePointerDown);
       cancelAnimationFrame(animId);
+      envRT.dispose();
+      composer.dispose();
       if (sharedRef.current) {
         sharedRef.current.geoSet.forEach((g) => g.dispose());
         sharedRef.current.matSet.forEach((m) => m.dispose());
@@ -260,6 +297,46 @@ export const CemeteryViewport3D: React.FC<CemeteryViewport3DProps> = ({
       renderer.dispose();
     };
   }, []);
+
+  useEffect(() => {
+    const scene = sceneRef.current;
+    const renderer = rendererRef.current;
+    const bloomPass = bloomPassRef.current;
+    if (!scene || !renderer || !bloomPass) return;
+
+    if (isNight) {
+      scene.background = new THREE.Color('#060d1f');
+      scene.fog = new THREE.FogExp2('#060d1f', 0.0042);
+      scene.environmentIntensity = 0.65;
+      renderer.toneMappingExposure = 1.15;
+      bloomPass.strength = 0.42;
+      bloomPass.threshold = 0.82;
+      bloomPass.radius = 0.35;
+    } else {
+      scene.background = new THREE.Color('#bae6fd');
+      scene.fog = new THREE.FogExp2('#e0f2fe', 0.0022);
+      scene.environmentIntensity = 1.0;
+      renderer.toneMappingExposure = 1.05;
+      bloomPass.strength = 0.14;
+      bloomPass.threshold = 0.95;
+      bloomPass.radius = 0.2;
+    }
+
+    scene.children.forEach((obj) => {
+      if (obj instanceof THREE.HemisphereLight) {
+        obj.intensity = isNight ? 0.85 : 1.25;
+        obj.color.set(isNight ? '#dbeafe' : '#f0f9ff');
+        obj.groundColor.set(isNight ? '#0f172a' : '#334155');
+      } else if (obj instanceof THREE.DirectionalLight) {
+        if (obj.castShadow) {
+          obj.intensity = isNight ? 1.55 : 2.25;
+          obj.color.set(isNight ? '#fffbeb' : '#ffffff');
+        } else {
+          obj.intensity = isNight ? 0.7 : 0.45;
+        }
+      }
+    });
+  }, [isNight]);
 
   useEffect(() => {
     if (terrainMeshRef.current) {
@@ -317,9 +394,18 @@ export const CemeteryViewport3D: React.FC<CemeteryViewport3DProps> = ({
   }, [cameraPreset]);
 
   return (
-    <div
-      ref={containerRef}
-      className={`w-full h-full min-h-[500px] ${measureMode ? 'cursor-crosshair' : 'cursor-grab active:cursor-grabbing'}`}
-    />
+    <div className="relative w-full h-full min-h-[500px]">
+      <div
+        ref={containerRef}
+        className={`w-full h-full ${measureMode ? 'cursor-crosshair' : 'cursor-grab active:cursor-grabbing'}`}
+      />
+      <button
+        type="button"
+        onClick={() => setIsNight((prev) => !prev)}
+        className="absolute top-4 right-4 z-10 flex items-center gap-2 rounded-lg border border-slate-700/80 bg-slate-900/85 px-3 py-1.5 text-xs font-semibold text-slate-100 shadow-lg backdrop-blur-md transition hover:border-sky-400/70 hover:bg-slate-800/90"
+      >
+        <span>{isNight ? '☀️ Chế độ Ngày' : '🌙 Chế độ Đêm'}</span>
+      </button>
+    </div>
   );
 };
