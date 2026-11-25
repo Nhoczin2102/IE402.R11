@@ -307,32 +307,32 @@ export const CemeteryViewport3D: React.FC<CemeteryViewport3DProps> = ({
     if (isNight) {
       scene.background = new THREE.Color('#060d1f');
       scene.fog = new THREE.FogExp2('#060d1f', 0.0042);
-      scene.environmentIntensity = 0.65;
-      renderer.toneMappingExposure = 1.15;
-      bloomPass.strength = 0.42;
-      bloomPass.threshold = 0.82;
-      bloomPass.radius = 0.35;
+      scene.environmentIntensity = 0.55;
+      renderer.toneMappingExposure = 1.05;
+      bloomPass.strength = 0.35;
+      bloomPass.threshold = 0.9;
+      bloomPass.radius = 0.3;
     } else {
       scene.background = new THREE.Color('#bae6fd');
-      scene.fog = new THREE.FogExp2('#e0f2fe', 0.0022);
-      scene.environmentIntensity = 1.0;
-      renderer.toneMappingExposure = 1.05;
-      bloomPass.strength = 0.14;
-      bloomPass.threshold = 0.95;
-      bloomPass.radius = 0.2;
+      scene.fog = new THREE.FogExp2('#e0f2fe', 0.0018);
+      scene.environmentIntensity = 0.4;
+      renderer.toneMappingExposure = 0.88;
+      bloomPass.strength = 0;
+      bloomPass.threshold = 1.5;
+      bloomPass.radius = 0;
     }
 
     scene.children.forEach((obj) => {
       if (obj instanceof THREE.HemisphereLight) {
-        obj.intensity = isNight ? 0.85 : 1.25;
+        obj.intensity = isNight ? 0.75 : 0.75;
         obj.color.set(isNight ? '#dbeafe' : '#f0f9ff');
         obj.groundColor.set(isNight ? '#0f172a' : '#334155');
       } else if (obj instanceof THREE.DirectionalLight) {
         if (obj.castShadow) {
-          obj.intensity = isNight ? 1.55 : 2.25;
+          obj.intensity = isNight ? 1.35 : 1.45;
           obj.color.set(isNight ? '#fffbeb' : '#ffffff');
         } else {
-          obj.intensity = isNight ? 0.7 : 0.45;
+          obj.intensity = isNight ? 0.55 : 0.3;
         }
       }
     });

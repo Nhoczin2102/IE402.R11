@@ -8,11 +8,11 @@ export function getTerrainHeight(x: number, z: number): number {
 }
 
 export function addSceneLighting(scene: THREE.Scene): void {
-  const hemiLight = new THREE.HemisphereLight('#dbeafe', '#0f172a', 0.9);
+  const hemiLight = new THREE.HemisphereLight('#dbeafe', '#0f172a', 0.75);
   hemiLight.position.set(0, 60, 0);
   scene.add(hemiLight);
 
-  const dirLight = new THREE.DirectionalLight('#fffbeb', 1.9);
+  const dirLight = new THREE.DirectionalLight('#fffbeb', 1.45);
   dirLight.position.set(42, 68, 36);
   dirLight.castShadow = true;
   dirLight.shadow.mapSize.width = 2048;
@@ -29,7 +29,7 @@ export function addSceneLighting(scene: THREE.Scene): void {
   dirLight.shadow.radius = 2.5;
   scene.add(dirLight);
 
-  const rimLight = new THREE.DirectionalLight('#60a5fa', 0.7);
+  const rimLight = new THREE.DirectionalLight('#60a5fa', 0.5);
   rimLight.position.set(-45, 32, -40);
   scene.add(rimLight);
 }
@@ -62,8 +62,8 @@ export function createTerrainMesh(): THREE.Mesh {
   const mat = new THREE.MeshStandardMaterial({
     map: grassTex,
     color: '#ffffff',
-    roughness: 0.88,
-    metalness: 0.03,
+    roughness: 0.9,
+    metalness: 0.02,
     vertexColors: false,
   });
 
@@ -112,28 +112,23 @@ export function createInfrastructureGroup(): THREE.Group {
   const group = new THREE.Group();
 
   const roadTex = createProceduralTexture('road', '#334155', '#475569', 2, 22);
-  const roadMat = new THREE.MeshPhysicalMaterial({
+  const roadMat = new THREE.MeshStandardMaterial({
     map: roadTex,
-    roughness: 0.58,
-    metalness: 0.08,
-    clearcoat: 0.3,
-    clearcoatRoughness: 0.35,
+    roughness: 0.9,
+    metalness: 0.02,
   });
 
   const crossRoadTex = createProceduralTexture('road', '#334155', '#475569', 22, 2);
-  const crossRoadMat = new THREE.MeshPhysicalMaterial({
+  const crossRoadMat = new THREE.MeshStandardMaterial({
     map: crossRoadTex,
-    roughness: 0.58,
-    metalness: 0.08,
-    clearcoat: 0.3,
-    clearcoatRoughness: 0.35,
+    roughness: 0.9,
+    metalness: 0.02,
   });
 
-  const curbMat = new THREE.MeshPhysicalMaterial({
-    color: '#94a3b8',
-    roughness: 0.45,
-    metalness: 0.12,
-    clearcoat: 0.35,
+  const curbMat = new THREE.MeshStandardMaterial({
+    color: '#64748b',
+    roughness: 0.82,
+    metalness: 0.05,
   });
 
   const mainRoad = new THREE.Mesh(new THREE.BoxGeometry(5.2, 0.08, 110), roadMat);
@@ -155,17 +150,15 @@ export function createInfrastructureGroup(): THREE.Group {
   });
 
   const trunkMat = new THREE.MeshStandardMaterial({ color: '#451a03', roughness: 0.9 });
-  const foliageMatA = new THREE.MeshPhysicalMaterial({
+  const foliageMatA = new THREE.MeshStandardMaterial({
     color: '#15803d',
-    roughness: 0.55,
+    roughness: 0.78,
     metalness: 0.02,
-    clearcoat: 0.18,
   });
-  const foliageMatB = new THREE.MeshPhysicalMaterial({
+  const foliageMatB = new THREE.MeshStandardMaterial({
     color: '#166534',
-    roughness: 0.6,
+    roughness: 0.82,
     metalness: 0.02,
-    clearcoat: 0.15,
   });
 
   const trunkGeo = new THREE.CylinderGeometry(0.16, 0.28, 1.8, 10);
@@ -211,17 +204,16 @@ export function createInfrastructureGroup(): THREE.Group {
     group.add(tree);
   });
 
-  const poleMat = new THREE.MeshPhysicalMaterial({
+  const poleMat = new THREE.MeshStandardMaterial({
     color: '#1e293b',
-    roughness: 0.35,
-    metalness: 0.85,
-    clearcoat: 0.5,
+    roughness: 0.45,
+    metalness: 0.75,
   });
   const bulbMat = new THREE.MeshStandardMaterial({
     color: '#fef08a',
     emissive: '#facc15',
-    emissiveIntensity: 2.2,
-    roughness: 0.2,
+    emissiveIntensity: 1.5,
+    roughness: 0.25,
   });
   const poleGeo = new THREE.CylinderGeometry(0.08, 0.12, 4.4, 10);
   const armGeo = new THREE.BoxGeometry(0.75, 0.08, 0.08);
