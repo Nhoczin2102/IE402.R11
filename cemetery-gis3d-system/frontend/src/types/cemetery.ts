@@ -15,11 +15,13 @@ export interface SUDMFace {
 
 export interface GraveLot {
   ma_lo_dat: string;
-  ma_phan_khu: 'Khu A' | 'Khu B' | 'Khu C';
+  ma_phan_khu: 'Khu A' | 'Khu B' | 'Khu C' | 'PK-A' | 'PK-B' | 'PK-C' | (string & {});
+  ma_mau_mo?: string;
   vi_tri_hang_o: string;
   trang_thai: GraveStatus;
   dien_tich_lo: number;
   cao_do_z: number;
+  goc_xoay_z?: number;
   do_sau_huyet: number;
   position: [number, number, number]; // Tọa độ thế giới [x, y, z]
   // Thông tin mẫu mộ B-Rep/SUDM
@@ -28,6 +30,7 @@ export interface GraveLot {
   surfaces: SUDMFace[];
   // Thông tin người mất (nếu đã an táng hoặc đặt trước)
   nguoi_mat?: {
+    ma_nguoi_mat?: string;
     ho_ten: string;
     ngay_sinh?: string;
     ngay_mat?: string;

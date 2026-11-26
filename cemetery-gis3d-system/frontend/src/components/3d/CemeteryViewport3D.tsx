@@ -9,6 +9,7 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { GraveLot } from '../../types/cemetery';
+import { InfrastructureItem, RoadSegmentItem } from '../../services/cemeteryApi';
 import { SharedGraveAssets, createSharedGraveAssets, disposeGroup } from './utils/threeHelpers';
 import { bindViewportInteractions, MeasureResult } from './utils/viewportInteraction';
 import { useViewportTheme } from './hooks/useViewportTheme';
@@ -24,6 +25,8 @@ import {
 
 interface CemeteryViewport3DProps {
   graves: GraveLot[];
+  infrastructures?: InfrastructureItem[];
+  roads?: RoadSegmentItem[];
   selectedGrave: GraveLot | null;
   onSelectGrave: (grave: GraveLot) => void;
   showWireframe: boolean;
@@ -37,6 +40,8 @@ interface CemeteryViewport3DProps {
 
 export const CemeteryViewport3D: React.FC<CemeteryViewport3DProps> = ({
   graves,
+  infrastructures = [],
+  roads = [],
   selectedGrave,
   onSelectGrave,
   showWireframe,
@@ -54,6 +59,7 @@ export const CemeteryViewport3D: React.FC<CemeteryViewport3DProps> = ({
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const bloomPassRef = useRef<UnrealBloomPass | null>(null);
   const terrainMeshRef = useRef<THREE.Mesh | null>(null);
+  const infraGroupRef = useRef<THREE.Group | null>(null);
   const gravesGroupRef = useRef<THREE.Group | null>(null);
   const routeGroupRef = useRef<THREE.Group | null>(null);
   const measureGroupRef = useRef<THREE.Group | null>(null);
@@ -145,8 +151,6 @@ export const CemeteryViewport3D: React.FC<CemeteryViewport3DProps> = ({
     scene.add(terrainMesh);
     terrainMeshRef.current = terrainMesh;
 
-    scene.add(createInfrastructureGroup());
-
     const gravesGroup = new THREE.Group();
     const routeGroup = new THREE.Group();
     const measureGroup = new THREE.Group();
@@ -237,6 +241,21 @@ export const CemeteryViewport3D: React.FC<CemeteryViewport3DProps> = ({
   }, []);
 
   useViewportTheme(isNight, sceneRef, rendererRef, bloomPassRef);
+
+  useEffect(() => {
+    const scene = sceneRef.current;
+    const renderer = rendererRef.current;
+    if (!scene || !renderer) return;
+
+    if (infraGroupRef.current) {
+      scene.remove(infraGroupRef.current);
+    }
+
+    const maxAnisotropy = Math.min(renderer.capabilities.getMaxAnisotropy(), 8);
+    const nextInfra = createInfrastructureGroup(infrastructures, roads, maxAnisotropy);
+    scene.add(nextInfra);
+    infraGroupRef.current = nextInfra;
+  }, [infrastructures, roads]);
 
   useEffect(() => {
     if (terrainMeshRef.current) {
