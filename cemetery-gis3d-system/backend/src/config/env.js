@@ -18,7 +18,7 @@ const isLocalDb = dbHost === 'localhost' || dbHost === '127.0.0.1';
 const env = Object.freeze({
   nodeEnv: process.env.NODE_ENV || 'development',
   isProduction: process.env.NODE_ENV === 'production',
-  port: parseNumber(process.env.PORT, 5000),
+  port: parseNumber(process.env.PORT, 5001),
   corsOrigin: process.env.CORS_ORIGIN || '*',
   rateLimit: Object.freeze({
     windowMs: parseNumber(process.env.RATE_LIMIT_WINDOW_MS, 15 * 60 * 1000),
@@ -46,7 +46,7 @@ const validateEnv = () => {
 
   if (missing.length > 0) {
     throw new Error(
-      `Thiếu biến môi trường bắt buộc trong tệp .env: ${missing.join(', ')}. Vui lòng tạo .env từ .env.example.`
+      `Thiếu biến môi trường bắt buộc trong tệp .env: ${missing.join(', ')}.`
     );
   }
 };

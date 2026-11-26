@@ -1,14 +1,14 @@
 const db = require('../../config/database');
 
 /**
- * Truy vấn các tuyến đường 3D từ bảng tuyen_giao_thong để phục vụ phân tích mạng lưới.
+ * Truy vấn các tuyến đường 3D từ bảng tuyen_giao_thong trên Supabase để phục vụ phân tích mạng lưới.
  */
 const findRoadNetworkLines = async () => {
   const sql = `
     SELECT
       ma_tuyen_duong,
       ten_tuyen_duong,
-      loai_duong,
+      CASE WHEN chieu_rong_duong >= 6 THEN 'Trục chính' ELSE 'Lối đi bộ' END AS loai_duong,
       chieu_rong_duong,
       ST_AsGeoJSON(geom_3d)::json AS geojson
     FROM tuyen_giao_thong

@@ -1,8 +1,6 @@
 const { Pool } = require('pg');
 const { env } = require('./env');
 
-const isLocal = env.db.host === 'localhost' || env.db.host === '127.0.0.1';
-
 const pool = new Pool({
   host: env.db.host,
   port: env.db.port,
@@ -12,7 +10,10 @@ const pool = new Pool({
   max: env.db.max,
   idleTimeoutMillis: env.db.idleTimeoutMillis,
   connectionTimeoutMillis: env.db.connectionTimeoutMillis,
-  ssl: isLocal ? false : { rejectUnauthorized: false },
+  // Đọc trực tiếp từ env.db.ssl (tự bật SSL cho Supabase, tắt cho localhost)
+  ssl: env.db.ssl ? { rejectUnauthorized: false } : false,
+  // Đảm bảo tìm thấy hàm PostGIS ngay cả khi Supabase cài extension ở schema extensions
+  options: '-c search_path=public,extensions',
 });
 
 pool.on('error', (err) => {

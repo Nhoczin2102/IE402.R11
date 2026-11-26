@@ -1,4 +1,5 @@
 const topologyRepository = require('./topology.repository');
+const { DB_TO_UI_STATUS, ZONE_CODE_TO_UI_LABEL } = require('../../constants/cemeteryConstants');
 const AppError = require('../../utils/AppError');
 
 /**
@@ -24,8 +25,8 @@ const inspectGraveTopology = async (maLoDat, searchRadiusMeters = 10) => {
     const isDistanceValid = !n.is_overlapping && dist3d >= minRequired;
     return {
       ma_lo_dat_ke_can: n.ma_lo_dat_ke_can,
-      ma_phan_khu: n.ma_phan_khu,
-      trang_thai: n.trang_thai,
+      ma_phan_khu: ZONE_CODE_TO_UI_LABEL[n.ma_phan_khu] || n.ma_phan_khu,
+      trang_thai: DB_TO_UI_STATUS[n.trang_thai] || n.trang_thai,
       khoang_cach_3d_m: dist3d,
       khoang_cach_2d_m: Number(n.khoang_cach_2d),
       khoang_cach_ke_toi_thieu_m: minRequired,
@@ -50,7 +51,8 @@ const inspectGraveTopology = async (maLoDat, searchRadiusMeters = 10) => {
 
   return {
     ma_lo_dat: containment.ma_lo_dat,
-    ma_phan_khu: containment.ma_phan_khu,
+    ma_phan_khu: ZONE_CODE_TO_UI_LABEL[containment.ma_phan_khu] || containment.ma_phan_khu,
+    ma_phan_khu_goc: containment.ma_phan_khu,
     ten_phan_khu: containment.ten_phan_khu,
     hop_le_tong_the: isContained && !hasNeighborViolation && !hasBufferViolation,
     containment: {

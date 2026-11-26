@@ -2,11 +2,11 @@ const openApiSpec = {
   openapi: '3.0.3',
   info: {
     title: 'WebGIS 3D — Quy hoạch Nghĩa trang Đô thị (IE402.R11)',
-    version: '2.1.0',
+    version: '2.3.0',
     description:
       'REST API Backend 3-tier Modular (PostgreSQL + PostGIS 3D, EPSG:3405) hỗ trợ quản lý lô mộ theo khu/lô, BBOX/LOD, kiểm tra Topology 3D (chứa trong / kề nhau / vùng đệm), tính diện tích & sức chứa còn lại, và định tuyến Dijkstra 3D.',
   },
-  servers: [{ url: 'http://localhost:5000', description: 'Local Development Server' }],
+  servers: [{ url: `http://localhost:${process.env.PORT || 5001}`, description: 'Local Development Server' }],
   tags: [
     { name: 'Health', description: 'Kiểm tra trạng thái máy chủ và PostGIS' },
     { name: 'Graves', description: 'Quản lý lô mộ 3D, lọc BBOX/LOD, cấp phát và quy hoạch mới' },
