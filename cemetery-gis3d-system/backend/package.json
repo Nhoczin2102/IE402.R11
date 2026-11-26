@@ -1,7 +1,7 @@
 {
   "name": "cemetery-gis3d-backend",
-  "version": "2.1.0",
-  "description": "Backend REST API 3-tier Modular (Controller-Service-Repository) cho Hệ thống Quy hoạch Nghĩa trang Đô thị GIS 3D (IE402.R11)",
+  "version": "2.2.0",
+  "description": "Backend REST API 3-tier Modular (PostgreSQL/PostGIS 4326 trên Supabase + quy đổi tọa độ Three.js) cho Hệ thống Quy hoạch Nghĩa trang Đô thị GIS 3D (IE402.R11)",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
@@ -10,7 +10,6 @@
     "check": "node --check src/server.js && node --check src/app.js"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.119.2",
     "compression": "^1.7.4",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",

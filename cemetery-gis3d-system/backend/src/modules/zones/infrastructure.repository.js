@@ -1,4 +1,5 @@
 const db = require('../../config/database');
+const { SRID_WEB_MERCATOR } = require('../../constants/cemeteryConstants');
 
 const findAllInfrastructures = async () => {
   const sql = `
@@ -24,10 +25,10 @@ const findAllRoadSegments = async () => {
       ma_tuyen_duong,
       ma_phan_khu,
       ten_tuyen_duong,
-      loai_duong,
+      CASE WHEN chieu_rong_duong >= 6 THEN 'Trục chính' ELSE 'Lối đi bộ' END AS loai_duong,
       chieu_rong_duong,
       dien_tich_duong,
-      ROUND(ST_3DLength(geom_3d)::numeric, 2) AS chieu_dai_3d_m,
+      ROUND(ST_Length(ST_Transform(ST_Force2D(geom_3d), ${SRID_WEB_MERCATOR}))::numeric, 2) AS chieu_dai_3d_m,
       ST_AsGeoJSON(geom_3d)::json AS geojson
     FROM tuyen_giao_thong
     ORDER BY ma_tuyen_duong ASC;
