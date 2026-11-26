@@ -6,7 +6,7 @@ const topologyCheckParamSchema = z.object({
 
 const nearbyGravesQuerySchema = z.object({
   radius: z.coerce
-    .number({ invalid_type_error: 'radius phải là số dương (đơn vị mét)' })
+    .number({ error: 'radius phải là số dương (đơn vị mét)' })
     .positive('radius phải lớn hơn 0')
     .max(500, 'radius tối đa là 500m')
     .optional()

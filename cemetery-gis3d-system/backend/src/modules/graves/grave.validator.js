@@ -44,8 +44,8 @@ const createGraveBodySchema = z.object({
   ma_phan_khu: z.string().trim().min(1, 'Thiếu mã phân khu').max(30),
   ma_mau_mo: z.string().trim().min(1, 'Thiếu mã mẫu mộ 3D').max(20),
   vi_tri_hang_o: z.string().trim().min(1, 'Thiếu vị trí hàng/ô').max(50),
-  toa_do_x: z.coerce.number({ invalid_type_error: 'toa_do_x phải là số thực' }),
-  toa_do_z: z.coerce.number({ invalid_type_error: 'toa_do_z phải là số thực' }),
+  toa_do_x: z.coerce.number({ error: 'toa_do_x phải là số thực hợp lệ' }),
+  toa_do_z: z.coerce.number({ error: 'toa_do_z phải là số thực hợp lệ' }),
   cao_do_z: z.coerce.number().optional(),
   goc_xoay_z: z.coerce.number().min(0).max(360).optional().default(0),
 });
@@ -60,9 +60,7 @@ const allocateGraveBodySchema = z.object({
       DB_GRAVE_STATUS.RESERVED,
     ],
     {
-      errorMap: () => ({
-        message: `Trạng thái cấp phát phải là "${GRAVE_STATUS.OCCUPIED}" hoặc "${GRAVE_STATUS.RESERVED}"`,
-      }),
+      error: `Trạng thái cấp phát phải là "${GRAVE_STATUS.OCCUPIED}" hoặc "${GRAVE_STATUS.RESERVED}"`,
     }
   ),
   ho_ten: z.string().trim().min(2, 'Họ tên phải có ít nhất 2 ký tự').max(100),
@@ -72,13 +70,10 @@ const allocateGraveBodySchema = z.object({
   thong_tin_than_nhan: z.string().trim().max(150).optional().nullable(),
 });
 
-// Cho phép ho_ten là "" / null / undefined khi thu hồi lô về trạng thái Trống (TRONG)
 const updateGraveBodySchema = z
   .object({
     trang_thai: z.enum(VALID_GRAVE_STATUSES, {
-      errorMap: () => ({
-        message: `Trạng thái phải thuộc: ${GRAVE_STATUS.EMPTY}, ${GRAVE_STATUS.OCCUPIED}, ${GRAVE_STATUS.RESERVED}`,
-      }),
+      error: `Trạng thái phải thuộc: ${GRAVE_STATUS.EMPTY}, ${GRAVE_STATUS.OCCUPIED}, ${GRAVE_STATUS.RESERVED}`,
     }),
     ho_ten: z.string().trim().max(100).optional().nullable(),
     ngay_sinh: z.string().trim().max(20).optional().nullable(),
