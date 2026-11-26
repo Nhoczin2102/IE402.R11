@@ -1,10 +1,9 @@
 const db = require('../../config/database');
-const { SRID_WEB_MERCATOR } = require('../../constants/cemeteryConstants');
+const { SRID_WGS84, SRID_WEB_MERCATOR } = require('../../constants/cemeteryConstants');
 
-/**
- * Kiểm tra Topology Chứa trong (Containment):
- * Xác minh lô đất có nằm hoàn toàn bên trong ranh giới phân khu hay không (ST_Contains / ST_Within).
- */
+const toMeter2D = (col) =>
+  `CASE WHEN ST_SRID(${col}) = ${SRID_WGS84} THEN ST_Transform(ST_Force2D(${col}), ${SRID_WEB_MERCATOR}) ELSE ST_Force2D(${col}) END`;
+
 const checkLotContainment = async (maLoDat) => {
   const sql = `
     SELECT
@@ -21,9 +20,6 @@ const checkLotContainment = async (maLoDat) => {
   return rows[0] || null;
 };
 
-/**
- * Kiểm tra Topology Kề nhau & Chồng lấp (Adjacency / Overlap / 3D Distance theo mét qua SRID 3857):
- */
 const checkAdjacentLots = async (maLoDat, searchRadiusMeters = 10) => {
   const sql = `
     SELECT
@@ -33,16 +29,13 @@ const checkAdjacentLots = async (maLoDat, searchRadiusMeters = 10) => {
       m.khoang_cach_ke_toi_thieu,
       ROUND(
         ST_3DDistance(
-          ST_Force3DZ(ST_Transform(ST_Force2D(target.geom_3d), ${SRID_WEB_MERCATOR}), target.cao_do_z),
-          ST_Force3DZ(ST_Transform(ST_Force2D(other.geom_3d), ${SRID_WEB_MERCATOR}), other.cao_do_z)
+          ST_Force3DZ(${toMeter2D('target.geom_3d')}, target.cao_do_z),
+          ST_Force3DZ(${toMeter2D('other.geom_3d')}, other.cao_do_z)
         )::numeric,
         2
       ) AS khoang_cach_3d,
       ROUND(
-        ST_Distance(
-          ST_Transform(ST_Force2D(target.geom_3d), ${SRID_WEB_MERCATOR}),
-          ST_Transform(ST_Force2D(other.geom_3d), ${SRID_WEB_MERCATOR})
-        )::numeric,
+        ST_Distance(${toMeter2D('target.geom_3d')}, ${toMeter2D('other.geom_3d')})::numeric,
         2
       ) AS khoang_cach_2d,
       ST_Touches(ST_Force2D(target.geom_3d), ST_Force2D(other.geom_3d)) AS is_touching,
@@ -51,11 +44,7 @@ const checkAdjacentLots = async (maLoDat, searchRadiusMeters = 10) => {
     JOIN mau_mo_3d m ON target.ma_mau_mo = m.ma_mau_mo
     JOIN lo_dat other
       ON other.ma_lo_dat <> target.ma_lo_dat
-     AND ST_DWithin(
-       ST_Transform(ST_Force2D(target.geom_3d), ${SRID_WEB_MERCATOR}),
-       ST_Transform(ST_Force2D(other.geom_3d), ${SRID_WEB_MERCATOR}),
-       $2
-     )
+     AND ST_DWithin(${toMeter2D('target.geom_3d')}, ${toMeter2D('other.geom_3d')}, $2)
     WHERE target.ma_lo_dat = $1
     ORDER BY khoang_cach_3d ASC;
   `;
@@ -63,9 +52,6 @@ const checkAdjacentLots = async (maLoDat, searchRadiusMeters = 10) => {
   return rows;
 };
 
-/**
- * Kiểm tra phân tích vùng đệm (Buffer - Chương 8) theo đơn vị mét (SRID 3857):
- */
 const checkInfrastructureBuffers = async (maLoDat) => {
   const sql = `
     SELECT
@@ -75,14 +61,14 @@ const checkInfrastructureBuffers = async (maLoDat) => {
       ht.ban_kinh_cach_ly,
       ROUND(
         ST_3DDistance(
-          ST_Force3DZ(ST_Transform(ST_Force2D(l.geom_3d), ${SRID_WEB_MERCATOR}), l.cao_do_z),
-          ST_Force3DZ(ST_Transform(ST_Force2D(ht.geom_3d), ${SRID_WEB_MERCATOR}), ht.chieu_cao_3d)
+          ST_Force3DZ(${toMeter2D('l.geom_3d')}, l.cao_do_z),
+          ST_Force3DZ(${toMeter2D('ht.geom_3d')}, ht.chieu_cao_3d)
         )::numeric,
         2
       ) AS khoang_cach_3d,
       ST_Intersects(
-        ST_Transform(ST_Force2D(l.geom_3d), ${SRID_WEB_MERCATOR}),
-        ST_Buffer(ST_Transform(ST_Force2D(ht.geom_3d), ${SRID_WEB_MERCATOR}), ht.ban_kinh_cach_ly)
+        ${toMeter2D('l.geom_3d')},
+        ST_Buffer(${toMeter2D('ht.geom_3d')}, ht.ban_kinh_cach_ly)
       ) AS violates_buffer
     FROM lo_dat l
     CROSS JOIN ha_tang ht
@@ -93,9 +79,6 @@ const checkInfrastructureBuffers = async (maLoDat) => {
   return rows;
 };
 
-/**
- * Kiểm toán toàn bộ nghĩa trang trên Supabase (SRID 4326 -> 3857 mét).
- */
 const auditAllTopology = async () => {
   const containmentSql = `
     SELECT
@@ -113,8 +96,8 @@ const auditAllTopology = async () => {
       b.ma_lo_dat AS lo_2,
       ROUND(
         ST_3DDistance(
-          ST_Force3DZ(ST_Transform(ST_Force2D(a.geom_3d), ${SRID_WEB_MERCATOR}), a.cao_do_z),
-          ST_Force3DZ(ST_Transform(ST_Force2D(b.geom_3d), ${SRID_WEB_MERCATOR}), b.cao_do_z)
+          ST_Force3DZ(${toMeter2D('a.geom_3d')}, a.cao_do_z),
+          ST_Force3DZ(${toMeter2D('b.geom_3d')}, b.cao_do_z)
         )::numeric,
         2
       ) AS khoang_cach_3d
@@ -131,16 +114,16 @@ const auditAllTopology = async () => {
       ht.ban_kinh_cach_ly,
       ROUND(
         ST_3DDistance(
-          ST_Force3DZ(ST_Transform(ST_Force2D(l.geom_3d), ${SRID_WEB_MERCATOR}), l.cao_do_z),
-          ST_Force3DZ(ST_Transform(ST_Force2D(ht.geom_3d), ${SRID_WEB_MERCATOR}), ht.chieu_cao_3d)
+          ST_Force3DZ(${toMeter2D('l.geom_3d')}, l.cao_do_z),
+          ST_Force3DZ(${toMeter2D('ht.geom_3d')}, ht.chieu_cao_3d)
         )::numeric,
         2
       ) AS khoang_cach_3d
     FROM lo_dat l
     JOIN ha_tang ht
       ON ST_Intersects(
-        ST_Transform(ST_Force2D(l.geom_3d), ${SRID_WEB_MERCATOR}),
-        ST_Buffer(ST_Transform(ST_Force2D(ht.geom_3d), ${SRID_WEB_MERCATOR}), ht.ban_kinh_cach_ly)
+        ${toMeter2D('l.geom_3d')},
+        ST_Buffer(${toMeter2D('ht.geom_3d')}, ht.ban_kinh_cach_ly)
       );
   `;
 

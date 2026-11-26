@@ -20,7 +20,7 @@ const invalidateSpatialAnalyticsCache = () => {
 };
 
 /**
- * Chuẩn hóa chuỗi ngày (DD/MM/YYYY hoặc YYYY-MM-DD) sang định dạng ISO YYYY-MM-DD cho cột DATE của PostgreSQL.
+ * Chuẩn hóa chuỗi ngày (DD/MM/YYYY hoặc YYYY-MM-DD) sang định dạng ISO YYYY-MM-DD.
  */
 const normalizeToIsoDate = (value) => {
   if (!value || typeof value !== 'string') return null;
@@ -35,15 +35,50 @@ const normalizeToIsoDate = (value) => {
     const [, dd, mm, yyyy] = vnMatch;
     return `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`;
   }
-  return null;
+  return trimmed;
+};
+
+/**
+ * Định dạng hiển thị DD/MM/YYYY an toàn cho cả kiểu cột VARCHAR lẫn DATE từ PostgreSQL.
+ */
+const formatDisplayDate = (value) => {
+  if (!value) return undefined;
+  const str = String(value).trim();
+  if (!str) return undefined;
+  const isoMatch = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoMatch) {
+    return `${isoMatch[3]}/${isoMatch[2]}/${isoMatch[1]}`;
+  }
+  return str;
 };
 
 const todayIsoDate = () => new Date().toISOString().slice(0, 10);
 
+/**
+ * Tự nhận diện bảng lo_dat hiện tại đang dùng mã không dấu ('TRONG') hay tiếng Việt ('Trống')
+ * dựa trên trạng thái hiện hữu của bản ghi để không bao giờ vướng CHECK constraint.
+ */
+const resolveDbStatusValue = (requestedStatus, existingDbStatus = null) => {
+  const usesUppercaseCodes =
+    existingDbStatus && ['TRONG', 'DA_AN_TANG', 'DA_DAT_TRUOC'].includes(existingDbStatus);
+  if (usesUppercaseCodes) {
+    return UI_TO_DB_STATUS[requestedStatus] || requestedStatus;
+  }
+  return DB_TO_UI_STATUS[requestedStatus] || requestedStatus;
+};
+
+const isEmptyStatus = (status) =>
+  status === GRAVE_STATUS.EMPTY || status === DB_GRAVE_STATUS.EMPTY;
+
+const isOccupiedStatus = (status) =>
+  status === GRAVE_STATUS.OCCUPIED || status === DB_GRAVE_STATUS.OCCUPIED;
+
+const isReservedStatus = (status) =>
+  status === GRAVE_STATUS.RESERVED || status === DB_GRAVE_STATUS.RESERVED;
+
 const formatGraveRow = (row, lod = 3) => {
   const posX = Number(row.pos_x ?? 0);
   const posZ = Number(row.pos_z ?? 0);
-  // Đồng bộ cao độ bề mặt địa hình Three.js (Bước 3) để khối mộ nằm khít trên mặt đồi 3D
   const terrainY = Number(getTerrainHeight(posX, posZ).toFixed(2));
   const uiStatus = DB_TO_UI_STATUS[row.trang_thai] || row.trang_thai;
   const uiZone = ZONE_CODE_TO_UI_LABEL[row.ma_phan_khu] || row.ma_phan_khu;
@@ -52,7 +87,7 @@ const formatGraveRow = (row, lod = 3) => {
     ma_lo_dat: row.ma_lo_dat,
     ma_phan_khu: uiZone,
     ma_phan_khu_goc: row.ma_phan_khu,
-    ten_phan_khu: row.ten_phan_khu,
+    ten_phan_khu: row.ten_phan_khu || uiZone,
     trang_thai: uiStatus,
     dien_tich_lo: Number(row.dien_tich_lo),
     cao_do_z: terrainY,
@@ -71,6 +106,14 @@ const formatGraveRow = (row, lod = 3) => {
       ? row.surfaces
       : DEFAULT_SUDM_SURFACES;
 
+  const topoObj =
+    row.topology_info && typeof row.topology_info === 'object'
+      ? row.topology_info
+      : {
+          khoang_cach_ke_can: Number(row.topo_khoang_cach_ke_can ?? 0.6),
+          hop_le_quy_hoach: Boolean(row.topo_hop_le_quy_hoach ?? true),
+        };
+
   const lod2 = {
     ...baseLod1,
     ma_mau_mo: row.ma_mau_mo,
@@ -78,10 +121,7 @@ const formatGraveRow = (row, lod = 3) => {
     do_sau_huyet: Number(row.do_sau_huyet ?? 2.0),
     ten_mau_mo: row.ten_mau_mo || 'Mộ đơn tiêu chuẩn',
     surfaces: parsedSurfaces,
-    topology: {
-      khoang_cach_ke_can: Number(row.topo_khoang_cach_ke_can ?? 0.6),
-      hop_le_quy_hoach: Boolean(row.topo_hop_le_quy_hoach ?? true),
-    },
+    topology: topoObj,
   };
 
   if (lod === 2) {
@@ -103,9 +143,9 @@ const formatGraveRow = (row, lod = 3) => {
       ? {
           ma_nguoi_mat: row.ma_nguoi_mat,
           ho_ten: row.ho_ten,
-          ngay_sinh: row.ngay_sinh || undefined,
-          ngay_mat: row.ngay_mat || undefined,
-          ngay_an_tang: row.ngay_an_tang || undefined,
+          ngay_sinh: formatDisplayDate(row.ngay_sinh),
+          ngay_mat: formatDisplayDate(row.ngay_mat),
+          ngay_an_tang: formatDisplayDate(row.ngay_an_tang),
           thong_tin_than_nhan: row.thong_tin_than_nhan || undefined,
         }
       : undefined,
@@ -131,9 +171,6 @@ const getGraveDetail = async (maLoDat) => {
   return formatGraveRow(row, 3);
 };
 
-/**
- * Quy hoạch thêm lô mộ 3D mới trên Supabase (SRID 4326) với cổng kiểm tra Topology tự động.
- */
 const createGraveWithTopologyCheck = async (payload) => {
   const resolvedZoneCode = UI_LABEL_TO_ZONE_CODE[payload.ma_phan_khu] || payload.ma_phan_khu;
 
@@ -229,6 +266,8 @@ const createGraveWithTopologyCheck = async (payload) => {
         centerZ: payload.toa_do_z,
         lengthM,
         widthM,
+        srid: check.srid,
+        dbEmptyStatus: check.srid === 4326 ? DB_GRAVE_STATUS.EMPTY : GRAVE_STATUS.EMPTY,
       },
       client
     );
@@ -262,14 +301,12 @@ const allocateGrave = async ({
   ngay_an_tang,
   thong_tin_than_nhan,
 }) => {
-  const dbStatus = UI_TO_DB_STATUS[trang_thai];
-
   const allocated = await db.withTransaction(async (client) => {
     const existing = await graveRepository.findGraveStatusForUpdate(ma_lo_dat, client);
     if (!existing) {
       throw new AppError(`Mã lô đất "${ma_lo_dat}" không tồn tại.`, 404, 'GRAVE_NOT_FOUND');
     }
-    if (existing.trang_thai !== DB_GRAVE_STATUS.EMPTY) {
+    if (!isEmptyStatus(existing.trang_thai)) {
       const currentUiStatus = DB_TO_UI_STATUS[existing.trang_thai] || existing.trang_thai;
       throw new AppError(
         `Lô đất "${ma_lo_dat}" hiện đang ở trạng thái "${currentUiStatus}", không thể cấp phát mới.`,
@@ -278,16 +315,16 @@ const allocateGrave = async ({
       );
     }
 
+    const dbStatus = resolveDbStatusValue(trang_thai, existing.trang_thai);
     await graveRepository.updateGraveStatus(ma_lo_dat, dbStatus, client);
 
     const displayName =
-      dbStatus === DB_GRAVE_STATUS.RESERVED && !ho_ten.includes('(Đặt trước)')
+      isReservedStatus(trang_thai) && !ho_ten.includes('(Đặt trước)')
         ? `${ho_ten} (Đặt trước)`
         : ho_ten;
 
     const resolvedBurialDate =
-      normalizeToIsoDate(ngay_an_tang) ||
-      (dbStatus === DB_GRAVE_STATUS.OCCUPIED ? todayIsoDate() : null);
+      normalizeToIsoDate(ngay_an_tang) || (isOccupiedStatus(trang_thai) ? todayIsoDate() : null);
 
     const maNguoiMat = `NM-${ma_lo_dat.replace(/[^a-zA-Z0-9]/g, '')}`.slice(0, 30);
 
@@ -316,27 +353,24 @@ const updateGraveLifecycle = async (
   maLoDat,
   { trang_thai, ho_ten, ngay_sinh, ngay_mat, ngay_an_tang, thong_tin_than_nhan }
 ) => {
-  const dbStatus = UI_TO_DB_STATUS[trang_thai];
-
   const updatedLot = await db.withTransaction(async (client) => {
     const existing = await graveRepository.findGraveStatusForUpdate(maLoDat, client);
     if (!existing) {
       throw new AppError(`Mã lô đất "${maLoDat}" không tồn tại.`, 404, 'GRAVE_NOT_FOUND');
     }
 
+    const dbStatus = resolveDbStatusValue(trang_thai, existing.trang_thai);
     await graveRepository.updateGraveStatus(maLoDat, dbStatus, client);
 
-    if (dbStatus === DB_GRAVE_STATUS.EMPTY) {
+    if (isEmptyStatus(trang_thai)) {
       await graveRepository.deleteOccupantByGraveId(maLoDat, client);
     } else {
-      const cleanedName =
-        dbStatus === DB_GRAVE_STATUS.OCCUPIED
-          ? ho_ten.replace(/\s*\(Đặt trước\)\s*/g, '').trim()
-          : ho_ten;
+      const cleanedName = isOccupiedStatus(trang_thai)
+        ? ho_ten.replace(/\s*\(Đặt trước\)\s*/g, '').trim()
+        : ho_ten;
 
       const resolvedBurialDate =
-        normalizeToIsoDate(ngay_an_tang) ||
-        (dbStatus === DB_GRAVE_STATUS.OCCUPIED ? todayIsoDate() : null);
+        normalizeToIsoDate(ngay_an_tang) || (isOccupiedStatus(trang_thai) ? todayIsoDate() : null);
 
       const maNguoiMat = `NM-${maLoDat.replace(/[^a-zA-Z0-9]/g, '')}`.slice(0, 30);
 
@@ -409,4 +443,5 @@ module.exports = {
   updateGraveLifecycle,
   exportGravesCsv,
   normalizeToIsoDate,
+  formatDisplayDate,
 };

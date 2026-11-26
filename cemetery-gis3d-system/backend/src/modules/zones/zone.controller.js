@@ -42,20 +42,32 @@ const getZoneCapacityById = asyncHandler(async (req, res) => {
 
 const getAllInfrastructure = asyncHandler(async (req, res) => {
   const format = req.query.format === 'geojson' ? 'geojson' : 'json';
-  const data = await zoneService.listInfrastructure(format);
-  if (format === 'geojson') {
-    return res.status(200).json(data);
+  const cacheKey = `zones:infrastructure:${format}`;
+  const cached = spatialCache.get(cacheKey);
+  if (cached) {
+    res.setHeader('X-Cache', 'HIT');
+    return format === 'geojson' ? res.status(200).json(cached) : sendSuccess(res, cached);
   }
-  return sendSuccess(res, data);
+
+  const data = await zoneService.listInfrastructure(format);
+  spatialCache.set(cacheKey, data, 60000);
+  res.setHeader('X-Cache', 'MISS');
+  return format === 'geojson' ? res.status(200).json(data) : sendSuccess(res, data);
 });
 
 const getAllRoads = asyncHandler(async (req, res) => {
   const format = req.query.format === 'geojson' ? 'geojson' : 'json';
-  const data = await zoneService.listRoadSegments(format);
-  if (format === 'geojson') {
-    return res.status(200).json(data);
+  const cacheKey = `zones:roads:${format}`;
+  const cached = spatialCache.get(cacheKey);
+  if (cached) {
+    res.setHeader('X-Cache', 'HIT');
+    return format === 'geojson' ? res.status(200).json(cached) : sendSuccess(res, cached);
   }
-  return sendSuccess(res, data);
+
+  const data = await zoneService.listRoadSegments(format);
+  spatialCache.set(cacheKey, data, 60000);
+  res.setHeader('X-Cache', 'MISS');
+  return format === 'geojson' ? res.status(200).json(data) : sendSuccess(res, data);
 });
 
 module.exports = {
