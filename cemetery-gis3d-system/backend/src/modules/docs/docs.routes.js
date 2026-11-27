@@ -1,7 +1,9 @@
+const path = require('path');
 const express = require('express');
 const openApiSpec = require('./openapi.spec');
 
 const router = express.Router();
+const PREVIEW_2D_PATH = path.resolve(__dirname, '../../../public/preview-2d.html');
 
 router.get('/openapi.json', (req, res) => {
   res.status(200).json(openApiSpec);
@@ -29,6 +31,15 @@ router.get('/docs', (req, res) => {
     <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
   </body>
 </html>`);
+});
+
+// Công cụ kiểm thử bản đồ 2D độc lập (chỉ đọc từ /api/*, không ảnh hưởng FE 3D)
+router.get('/preview-2d', (req, res) => {
+  res.setHeader(
+    'Content-Security-Policy',
+    "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.tailwindcss.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' http://localhost:* https://cdn.jsdelivr.net;"
+  );
+  res.sendFile(PREVIEW_2D_PATH);
 });
 
 module.exports = router;

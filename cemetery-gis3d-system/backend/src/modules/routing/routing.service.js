@@ -6,7 +6,7 @@ const { getTerrainHeight, distance3D } = require('../../utils/terrainMath');
 const { spatialCache } = require('../../utils/memoryCache');
 const routingRepository = require('./routing.repository');
 
-const NODE_SNAP_TOLERANCE_M = 1.5;
+const NODE_SNAP_TOLERANCE_M = 1.6;
 
 const addEdge = (graph, u, v, weight) => {
   if (u === v) return;
@@ -70,12 +70,13 @@ const runDijkstra = (graph, coords3D, startKey, targetKey) => {
 
 /**
  * Dựng đồ thị mạng lưới giao thông 3D động từ các LineStringZ trong bảng tuyen_giao_thong.
- * Tự động gộp các giao lộ gần nhau (<= 1.5m) để đảm bảo tính liên thông (Connectivity).
+ * Tự động gộp các giao lộ gần nhau (<= 1.6m) và lưu danh sách đoạn đường để chiếu vuông góc chính xác.
  */
 const buildGraphFromPostgisRoads = (roadRows) => {
   const coords3D = {};
   const graph = {};
   const nodeKeys = [];
+  const edges = [];
 
   const findOrCreateNode = (x, z) => {
     const y = getTerrainHeight(x, z);
@@ -105,13 +106,49 @@ const buildGraphFromPostgisRoads = (roadRows) => {
       if (!Number.isFinite(x) || !Number.isFinite(z)) continue;
       const currKey = findOrCreateNode(x, z);
       if (prevKey && prevKey !== currKey) {
-        addEdge(graph, prevKey, currKey, distance3D(coords3D[prevKey], coords3D[currKey]));
+        const w = distance3D(coords3D[prevKey], coords3D[currKey]);
+        addEdge(graph, prevKey, currKey, w);
+        edges.push([prevKey, currKey]);
       }
       prevKey = currKey;
     }
   }
 
-  return { coords3D, graph, nodeKeys };
+  return { coords3D, graph, nodeKeys, edges };
+};
+
+/**
+ * Chiếu vuông góc một điểm bất kỳ lên đoạn đường gần nhất trong mạng lưới,
+ * chèn nút trung gian trực tiếp trên tim đường để tuyến đi bám 100% đường nhựa, không cắt ngang mộ/tòa nhà.
+ */
+const projectOntoNearestRoadEdge = (coords3D, graph, edges, point, nodeKey) => {
+  let best = null;
+  const px = point[0];
+  const pz = point[2];
+
+  for (const [u, v] of edges) {
+    const a = coords3D[u];
+    const b = coords3D[v];
+    const dx = b[0] - a[0];
+    const dz = b[2] - a[2];
+    const l2 = dx * dx + dz * dz;
+    const t = l2 === 0 ? 0 : Math.max(0, Math.min(1, ((px - a[0]) * dx + (pz - a[2]) * dz) / l2));
+    const qx = a[0] + t * dx;
+    const qz = a[2] + t * dz;
+    const dist2D = Math.hypot(px - qx, pz - qz);
+    if (!best || dist2D < best.dist2D) {
+      best = { u, v, qx, qz, dist2D };
+    }
+  }
+
+  if (!best) return null;
+  const qy = getTerrainHeight(best.qx, best.qz);
+  const projCoord = [Number(best.qx.toFixed(2)), Number(qy.toFixed(2)), Number(best.qz.toFixed(2))];
+  coords3D[nodeKey] = projCoord;
+  graph[nodeKey] = [];
+  addEdge(graph, nodeKey, best.u, distance3D(projCoord, coords3D[best.u]));
+  addEdge(graph, nodeKey, best.v, distance3D(projCoord, coords3D[best.v]));
+  return nodeKey;
 };
 
 const findNearestNodeKey = (coords3D, nodeKeys, targetPoint) => {
@@ -159,9 +196,7 @@ const loadCachedRoadRows = async () => {
 };
 
 /**
- * Tính đường đi ngắn nhất trong không gian 3D bằng thuật toán Dijkstra:
- * Ưu tiên dựng đồ thị động từ bảng tuyen_giao_thong trên PostGIS,
- * tự fallback về đồ thị chuẩn nếu mạng lưới DB trống hoặc bị đứt đoạn.
+ * Tính đường đi ngắn nhất trong không gian 3D bằng thuật toán Dijkstra bám theo tim đường thực tế.
  */
 const calculateShortestRoute3D = async ({ targetX, targetZ, startNode = 'GATE' }) => {
   const startCoord2D = DEFAULT_NETWORK_NODES[startNode] || DEFAULT_NETWORK_NODES.GATE;
@@ -171,18 +206,21 @@ const calculateShortestRoute3D = async ({ targetX, targetZ, startNode = 'GATE' }
   const roadRows = await loadCachedRoadRows();
   let routeSource = 'postgis_network';
   let result = null;
-  let nearestNode = 'JUNCTION_B';
+  let nearestNode = 'ACCESS_TARGET';
 
   if (roadRows.length > 0) {
-    const { coords3D, graph, nodeKeys } = buildGraphFromPostgisRoads(roadRows);
-    if (nodeKeys.length >= 2) {
-      const startSnap = findNearestNodeKey(coords3D, nodeKeys, startPoint);
-      nearestNode = findNearestNodeKey(coords3D, nodeKeys, targetPoint);
+    const { coords3D, graph, nodeKeys, edges } = buildGraphFromPostgisRoads(roadRows);
+    if (nodeKeys.length >= 2 && edges.length >= 1) {
+      const startSnap = projectOntoNearestRoadEdge(coords3D, graph, edges, startPoint, 'ACCESS_START')
+        || findNearestNodeKey(coords3D, nodeKeys, startPoint);
+      const targetSnap = projectOntoNearestRoadEdge(coords3D, graph, edges, targetPoint, 'ACCESS_TARGET')
+        || findNearestNodeKey(coords3D, nodeKeys, targetPoint);
+      nearestNode = targetSnap;
 
       coords3D.START = startPoint;
       coords3D.TARGET = targetPoint;
       addEdge(graph, 'START', startSnap, distance3D(startPoint, coords3D[startSnap]));
-      addEdge(graph, nearestNode, 'TARGET', distance3D(coords3D[nearestNode], targetPoint));
+      addEdge(graph, targetSnap, 'TARGET', distance3D(coords3D[targetSnap], targetPoint));
 
       result = runDijkstra(graph, coords3D, 'START', 'TARGET');
     }
@@ -234,5 +272,6 @@ module.exports = {
   calculateShortestRoute3D,
   getRoadNetworkGeoJson,
   buildGraphFromPostgisRoads,
+  projectOntoNearestRoadEdge,
   runDijkstra,
 };
