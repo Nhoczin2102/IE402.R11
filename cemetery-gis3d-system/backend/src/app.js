@@ -22,10 +22,24 @@ app.use(compression());
 // 2. Gắn X-Request-Id cho mọi request để truy vết log & lỗi
 app.use(requestIdMiddleware);
 
-// 3. Cấu hình CORS cho Frontend React/Next.js
+// 3. Cấu hình CORS linh hoạt (tự chấp nhận cả localhost:3000 và localhost:5173 khi dev)
+const buildCorsOriginOption = () => {
+  if (env.corsOrigin === '*') return true;
+  const configured = env.corsOrigin
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (!env.isProduction) {
+    for (const devOrigin of ['http://localhost:3000', 'http://localhost:5173']) {
+      if (!configured.includes(devOrigin)) configured.push(devOrigin);
+    }
+  }
+  return configured;
+};
+
 app.use(
   cors({
-    origin: env.corsOrigin === '*' ? true : env.corsOrigin.split(',').map((s) => s.trim()),
+    origin: buildCorsOriginOption(),
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     exposedHeaders: ['X-Request-Id', 'X-Cache'],
   })
@@ -48,9 +62,10 @@ const apiLimiter = rateLimit({
 app.use(express.json({ limit: '1mb' }));
 app.use(requestLogger);
 
-// 6. Gắn các nhóm tuyến đường
+// 6. Gắn các nhóm tuyến đường (kèm alias /api/api phòng trường hợp FE cũ nối dư tiền tố /api)
 app.use('/', docsRoutes);
 app.use('/health', healthRoutes);
+app.use('/api/api', apiLimiter, apiRoutes);
 app.use('/api', apiLimiter, apiRoutes);
 
 // 7. Xử lý 404 & lỗi tập trung

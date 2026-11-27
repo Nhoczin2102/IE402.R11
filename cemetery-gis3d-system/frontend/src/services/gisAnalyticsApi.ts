@@ -1,4 +1,5 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+const RAW_API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api';
+const API_BASE = RAW_API_URL.endsWith('/api') ? RAW_API_URL : `${RAW_API_URL.replace(/\/$/, '')}/api`;
 
 export interface ZoneCapacityItem {
   ma_phan_khu: string;
@@ -34,21 +35,24 @@ export interface LiveTopologyReport {
 }
 
 export async function fetchZonesCapacity(): Promise<ZoneCapacityItem[]> {
-  const res = await fetch(`${API_BASE}/api/zones/capacity`);
+  const res = await fetch(`${API_BASE}/zones/capacity`, { cache: 'no-store' });
   if (!res.ok) return [];
   const json = await res.json();
   return json?.data?.zones || [];
 }
 
 export async function fetchTopologyAudit(): Promise<TopologyAuditData | null> {
-  const res = await fetch(`${API_BASE}/api/topology/audit`);
+  const res = await fetch(`${API_BASE}/topology/audit`, { cache: 'no-store' });
   if (!res.ok) return null;
   const json = await res.json();
   return json?.data || null;
 }
 
 export async function fetchGraveTopology(maLoDat: string, radius = 10): Promise<LiveTopologyReport | null> {
-  const res = await fetch(`${API_BASE}/api/topology/graves/${encodeURIComponent(maLoDat)}?radius=${radius}`);
+  const res = await fetch(
+    `${API_BASE}/topology/graves/${encodeURIComponent(maLoDat)}?radius=${radius}`,
+    { cache: 'no-store' }
+  );
   if (!res.ok) return null;
   const json = await res.json();
   return json?.data || null;

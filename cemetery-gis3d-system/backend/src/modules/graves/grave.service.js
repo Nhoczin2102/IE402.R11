@@ -1,9 +1,17 @@
 const db = require('../../config/database');
 const graveRepository = require('./grave.repository');
-const { GRAVE_STATUS } = require('../../constants/cemeteryConstants');
+const {
+  GRAVE_STATUS,
+  DB_GRAVE_STATUS,
+  DB_TO_UI_STATUS,
+  UI_TO_DB_STATUS,
+  ZONE_CODE_TO_UI_LABEL,
+  UI_LABEL_TO_ZONE_CODE,
+  DEFAULT_SUDM_SURFACES,
+} = require('../../constants/cemeteryConstants');
 const AppError = require('../../utils/AppError');
 const { toGeoJsonFeatureCollection } = require('../../utils/apiResponse');
-const { getTerrainHeight, buildLotPolygonZWkt } = require('../../utils/terrainMath');
+const { getTerrainHeight } = require('../../utils/terrainMath');
 const { spatialCache } = require('../../utils/memoryCache');
 
 const invalidateSpatialAnalyticsCache = () => {
@@ -11,41 +19,109 @@ const invalidateSpatialAnalyticsCache = () => {
   spatialCache.invalidatePrefix('topology:');
 };
 
-const buildDefaultSudmSurfaces = (areaM2, heightM, lengthM, widthM) => [
-  { id: 'F_GROUND', surfaceType: 'GroundSurface', label: 'Móng bệ bê tông tiếp đất', areaM2 },
-  {
-    id: 'F_WALL',
-    surfaceType: 'WallSurface',
-    label: '4 Mặt tường bao thân mộ',
-    areaM2: Number((2 * (lengthM + widthM) * heightM).toFixed(2)),
-  },
-  { id: 'F_ROOF', surfaceType: 'RoofSurface', label: 'Nắp mộ & Mặt bia đá', areaM2 },
-];
+/**
+ * Chuẩn hóa chuỗi ngày (DD/MM/YYYY hoặc YYYY-MM-DD) sang định dạng ISO YYYY-MM-DD.
+ */
+const normalizeToIsoDate = (value) => {
+  if (!value || typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    return trimmed;
+  }
+  const vnMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (vnMatch) {
+    const [, dd, mm, yyyy] = vnMatch;
+    return `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`;
+  }
+  return trimmed;
+};
+
+/**
+ * Định dạng hiển thị DD/MM/YYYY an toàn cho cả kiểu cột VARCHAR lẫn DATE từ PostgreSQL.
+ */
+const formatDisplayDate = (value) => {
+  if (!value) return undefined;
+  const str = String(value).trim();
+  if (!str) return undefined;
+  const isoMatch = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoMatch) {
+    return `${isoMatch[3]}/${isoMatch[2]}/${isoMatch[1]}`;
+  }
+  return str;
+};
+
+const todayIsoDate = () => new Date().toISOString().slice(0, 10);
+
+/**
+ * Tự nhận diện bảng lo_dat hiện tại đang dùng mã không dấu ('TRONG') hay tiếng Việt ('Trống')
+ * dựa trên trạng thái hiện hữu của bản ghi để không bao giờ vướng CHECK constraint.
+ */
+const resolveDbStatusValue = (requestedStatus, existingDbStatus = null) => {
+  const usesUppercaseCodes =
+    existingDbStatus && ['TRONG', 'DA_AN_TANG', 'DA_DAT_TRUOC'].includes(existingDbStatus);
+  if (usesUppercaseCodes) {
+    return UI_TO_DB_STATUS[requestedStatus] || requestedStatus;
+  }
+  return DB_TO_UI_STATUS[requestedStatus] || requestedStatus;
+};
+
+const isEmptyStatus = (status) =>
+  status === GRAVE_STATUS.EMPTY || status === DB_GRAVE_STATUS.EMPTY;
+
+const isOccupiedStatus = (status) =>
+  status === GRAVE_STATUS.OCCUPIED || status === DB_GRAVE_STATUS.OCCUPIED;
+
+const isReservedStatus = (status) =>
+  status === GRAVE_STATUS.RESERVED || status === DB_GRAVE_STATUS.RESERVED;
 
 const formatGraveRow = (row, lod = 3) => {
+  const posX = Number(row.pos_x ?? 0);
+  const posZ = Number(row.pos_z ?? 0);
+  const terrainY = Number(getTerrainHeight(posX, posZ).toFixed(2));
+  const uiStatus = DB_TO_UI_STATUS[row.trang_thai] || row.trang_thai;
+  const uiZone = ZONE_CODE_TO_UI_LABEL[row.ma_phan_khu] || row.ma_phan_khu;
+
   const baseLod1 = {
     ma_lo_dat: row.ma_lo_dat,
-    ma_phan_khu: row.ma_phan_khu,
-    trang_thai: row.trang_thai,
+    ma_phan_khu: uiZone,
+    ma_phan_khu_goc: row.ma_phan_khu,
+    ten_phan_khu: row.ten_phan_khu || uiZone,
+    trang_thai: uiStatus,
     dien_tich_lo: Number(row.dien_tich_lo),
-    cao_do_z: Number(row.cao_do_z),
+    cao_do_z: terrainY,
+    cao_do_z_db: Number(row.cao_do_z),
     goc_xoay_z: Number(row.goc_xoay_z || 0),
     chieu_cao_chuan: Number(row.chieu_cao_chuan || 1.1),
-    position: [Number(row.toa_do_x), Number(row.cao_do_z), Number(row.toa_do_z)],
+    position: [posX, terrainY, posZ],
   };
 
   if (lod === 1) {
     return baseLod1;
   }
 
+  const parsedSurfaces =
+    Array.isArray(row.surfaces) && row.surfaces.length > 0
+      ? row.surfaces
+      : DEFAULT_SUDM_SURFACES;
+
+  const topoObj =
+    row.topology_info && typeof row.topology_info === 'object'
+      ? row.topology_info
+      : {
+          khoang_cach_ke_can: Number(row.topo_khoang_cach_ke_can ?? 0.6),
+          hop_le_quy_hoach: Boolean(row.topo_hop_le_quy_hoach ?? true),
+        };
+
   const lod2 = {
     ...baseLod1,
     ma_mau_mo: row.ma_mau_mo,
     vi_tri_hang_o: row.vi_tri_hang_o,
-    do_sau_huyet: Number(row.do_sau_huyet),
+    do_sau_huyet: Number(row.do_sau_huyet ?? 2.0),
     ten_mau_mo: row.ten_mau_mo || 'Mộ đơn tiêu chuẩn',
-    surfaces: Array.isArray(row.surfaces_sudm) ? row.surfaces_sudm : [],
-    topology: row.topology_info || { khoang_cach_ke_can: 0.6, hop_le_quy_hoach: true },
+    surfaces: parsedSurfaces,
+    topology: topoObj,
   };
 
   if (lod === 2) {
@@ -67,9 +143,9 @@ const formatGraveRow = (row, lod = 3) => {
       ? {
           ma_nguoi_mat: row.ma_nguoi_mat,
           ho_ten: row.ho_ten,
-          ngay_sinh: row.ngay_sinh || undefined,
-          ngay_mat: row.ngay_mat || undefined,
-          ngay_an_tang: row.ngay_an_tang || undefined,
+          ngay_sinh: formatDisplayDate(row.ngay_sinh),
+          ngay_mat: formatDisplayDate(row.ngay_mat),
+          ngay_an_tang: formatDisplayDate(row.ngay_an_tang),
           thong_tin_than_nhan: row.thong_tin_than_nhan || undefined,
         }
       : undefined,
@@ -95,10 +171,9 @@ const getGraveDetail = async (maLoDat) => {
   return formatGraveRow(row, 3);
 };
 
-/**
- * Quy hoạch thêm lô mộ 3D mới với cổng kiểm tra Topology tự động (Containment + Overlap + Clearance + Buffer).
- */
 const createGraveWithTopologyCheck = async (payload) => {
+  const resolvedZoneCode = UI_LABEL_TO_ZONE_CODE[payload.ma_phan_khu] || payload.ma_phan_khu;
+
   const created = await db.withTransaction(async (client) => {
     const template = await graveRepository.findGraveTemplateById(payload.ma_mau_mo, client);
     if (!template) {
@@ -116,25 +191,24 @@ const createGraveWithTopologyCheck = async (payload) => {
 
     const lengthM = Number(template.chieu_dai_chuan);
     const widthM = Number(template.chieu_rong_chuan);
-    const heightM = Number(template.chieu_cao_chuan);
     const areaM2 = Number(template.dien_tich_chuan);
     const minClearance = Number(template.khoang_cach_ke_toi_thieu);
 
-    const wktPolygonZ = buildLotPolygonZWkt(
-      payload.toa_do_x,
-      payload.toa_do_z,
-      elevationZ,
-      lengthM,
-      widthM
-    );
-
-    const check = await graveRepository.validateCandidateGeometry(
-      { maPhanKhu: payload.ma_phan_khu, wktPolygonZ, minClearance },
+    const check = await graveRepository.validateCandidateLot(
+      {
+        maPhanKhu: resolvedZoneCode,
+        centerX: payload.toa_do_x,
+        centerZ: payload.toa_do_z,
+        lengthM,
+        widthM,
+        elevationZ,
+        minClearance,
+      },
       client
     );
 
     if (!check.zoneExists) {
-      throw new AppError(`Phân khu "${payload.ma_phan_khu}" không tồn tại.`, 404, 'ZONE_NOT_FOUND');
+      throw new AppError(`Phân khu "${resolvedZoneCode}" không tồn tại.`, 404, 'ZONE_NOT_FOUND');
     }
 
     const violations = [];
@@ -144,7 +218,7 @@ const createGraveWithTopologyCheck = async (payload) => {
     if (!check.isContained) {
       violations.push({
         rule: 'CONTAINMENT',
-        message: `Lô mộ "${payload.ma_lo_dat}" nằm ngoài ranh giới phân khu "${payload.ma_phan_khu}".`,
+        message: `Lô mộ "${payload.ma_lo_dat}" nằm ngoài ranh giới phân khu "${resolvedZoneCode}".`,
       });
     }
     if (check.overlappingLots.length > 0) {
@@ -179,37 +253,25 @@ const createGraveWithTopologyCheck = async (payload) => {
       );
     }
 
-    const nearestDistance =
-      check.neighbors.length > 0 ? Number(check.neighbors[0].khoang_cach_3d) : minClearance;
-
-    const surfacesSudm =
-      payload.surfaces_sudm && payload.surfaces_sudm.length > 0
-        ? payload.surfaces_sudm
-        : buildDefaultSudmSurfaces(areaM2, heightM, lengthM, widthM);
-
     await graveRepository.insertGraveLot(
       {
         ma_lo_dat: payload.ma_lo_dat,
-        ma_phan_khu: payload.ma_phan_khu,
+        ma_phan_khu: resolvedZoneCode,
         ma_mau_mo: payload.ma_mau_mo,
         vi_tri_hang_o: payload.vi_tri_hang_o,
         dien_tich_lo: areaM2,
         cao_do_z: elevationZ,
         goc_xoay_z: payload.goc_xoay_z ?? 0,
-        do_sau_huyet: payload.do_sau_huyet ?? 2.0,
-        toa_do_x: payload.toa_do_x,
-        toa_do_z: payload.toa_do_z,
-        wktPolygonZ,
-        surfaces_sudm: surfacesSudm,
-        topology_info: {
-          khoang_cach_ke_can: nearestDistance,
-          hop_le_quy_hoach: true,
-        },
+        centerX: payload.toa_do_x,
+        centerZ: payload.toa_do_z,
+        lengthM,
+        widthM,
+        srid: check.srid,
+        dbEmptyStatus: check.srid === 4326 ? DB_GRAVE_STATUS.EMPTY : GRAVE_STATUS.EMPTY,
       },
       client
     );
 
-    // Ghi nhận tối đa 3 quan hệ kề cận gần nhất vào bảng quan_he_topology hiện có
     for (const neighbor of check.neighbors.slice(0, 3)) {
       await graveRepository.insertAdjacentTopologyRelation(
         {
@@ -244,34 +306,35 @@ const allocateGrave = async ({
     if (!existing) {
       throw new AppError(`Mã lô đất "${ma_lo_dat}" không tồn tại.`, 404, 'GRAVE_NOT_FOUND');
     }
-    if (existing.trang_thai !== GRAVE_STATUS.EMPTY) {
+    if (!isEmptyStatus(existing.trang_thai)) {
+      const currentUiStatus = DB_TO_UI_STATUS[existing.trang_thai] || existing.trang_thai;
       throw new AppError(
-        `Lô đất "${ma_lo_dat}" hiện đang ở trạng thái "${existing.trang_thai}", không thể cấp phát mới.`,
+        `Lô đất "${ma_lo_dat}" hiện đang ở trạng thái "${currentUiStatus}", không thể cấp phát mới.`,
         409,
         'GRAVE_ALREADY_ALLOCATED'
       );
     }
 
-    await graveRepository.updateGraveStatus(ma_lo_dat, trang_thai, client);
+    const dbStatus = resolveDbStatusValue(trang_thai, existing.trang_thai);
+    await graveRepository.updateGraveStatus(ma_lo_dat, dbStatus, client);
 
     const displayName =
-      trang_thai === GRAVE_STATUS.RESERVED && !ho_ten.includes('(Đặt trước)')
+      isReservedStatus(trang_thai) && !ho_ten.includes('(Đặt trước)')
         ? `${ho_ten} (Đặt trước)`
         : ho_ten;
 
     const resolvedBurialDate =
-      ngay_an_tang ||
-      (trang_thai === GRAVE_STATUS.OCCUPIED ? new Date().toLocaleDateString('vi-VN') : null);
+      normalizeToIsoDate(ngay_an_tang) || (isOccupiedStatus(trang_thai) ? todayIsoDate() : null);
 
-    const maNguoiMat = `NM-${ma_lo_dat.replace(/[^a-zA-Z0-9]/g, '')}`;
+    const maNguoiMat = `NM-${ma_lo_dat.replace(/[^a-zA-Z0-9]/g, '')}`.slice(0, 30);
 
     await graveRepository.upsertOccupant(
       {
         ma_nguoi_mat: maNguoiMat,
         ma_lo_dat,
         ho_ten: displayName,
-        ngay_sinh,
-        ngay_mat,
+        ngay_sinh: normalizeToIsoDate(ngay_sinh),
+        ngay_mat: normalizeToIsoDate(ngay_mat),
         ngay_an_tang: resolvedBurialDate,
         thong_tin_than_nhan,
       },
@@ -296,29 +359,28 @@ const updateGraveLifecycle = async (
       throw new AppError(`Mã lô đất "${maLoDat}" không tồn tại.`, 404, 'GRAVE_NOT_FOUND');
     }
 
-    await graveRepository.updateGraveStatus(maLoDat, trang_thai, client);
+    const dbStatus = resolveDbStatusValue(trang_thai, existing.trang_thai);
+    await graveRepository.updateGraveStatus(maLoDat, dbStatus, client);
 
-    if (trang_thai === GRAVE_STATUS.EMPTY) {
+    if (isEmptyStatus(trang_thai)) {
       await graveRepository.deleteOccupantByGraveId(maLoDat, client);
     } else {
-      const cleanedName =
-        trang_thai === GRAVE_STATUS.OCCUPIED
-          ? ho_ten.replace(/\s*\(Đặt trước\)\s*/g, '').trim()
-          : ho_ten;
+      const cleanedName = isOccupiedStatus(trang_thai)
+        ? ho_ten.replace(/\s*\(Đặt trước\)\s*/g, '').trim()
+        : ho_ten;
 
       const resolvedBurialDate =
-        ngay_an_tang ||
-        (trang_thai === GRAVE_STATUS.OCCUPIED ? new Date().toLocaleDateString('vi-VN') : null);
+        normalizeToIsoDate(ngay_an_tang) || (isOccupiedStatus(trang_thai) ? todayIsoDate() : null);
 
-      const maNguoiMat = `NM-${maLoDat.replace(/[^a-zA-Z0-9]/g, '')}`;
+      const maNguoiMat = `NM-${maLoDat.replace(/[^a-zA-Z0-9]/g, '')}`.slice(0, 30);
 
       await graveRepository.upsertOccupant(
         {
           ma_nguoi_mat: maNguoiMat,
           ma_lo_dat: maLoDat,
           ho_ten: cleanedName,
-          ngay_sinh,
-          ngay_mat,
+          ngay_sinh: normalizeToIsoDate(ngay_sinh),
+          ngay_mat: normalizeToIsoDate(ngay_mat),
           ngay_an_tang: resolvedBurialDate,
           thong_tin_than_nhan,
         },
@@ -380,5 +442,6 @@ module.exports = {
   allocateGrave,
   updateGraveLifecycle,
   exportGravesCsv,
-  buildLotPolygonZWkt,
+  normalizeToIsoDate,
+  formatDisplayDate,
 };

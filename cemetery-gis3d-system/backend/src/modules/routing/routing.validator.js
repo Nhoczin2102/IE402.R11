@@ -4,8 +4,8 @@ const { DEFAULT_NETWORK_NODES } = require('../../constants/cemeteryConstants');
 const validStartNodes = Object.keys(DEFAULT_NETWORK_NODES);
 
 const shortestPathQuerySchema = z.object({
-  targetX: z.coerce.number({ invalid_type_error: 'targetX phải là số thực hợp lệ' }),
-  targetZ: z.coerce.number({ invalid_type_error: 'targetZ phải là số thực hợp lệ' }),
+  targetX: z.coerce.number({ error: 'targetX phải là số thực hợp lệ' }),
+  targetZ: z.coerce.number({ error: 'targetZ phải là số thực hợp lệ' }),
   startNode: z
     .string()
     .trim()

@@ -15,8 +15,17 @@ export function buildGraveUnit(
   const groundY = getTerrainHeight(grave.position[0], grave.position[2]);
   unit.position.set(grave.position[0], groundY, grave.position[2]);
 
+  if (grave.goc_xoay_z) {
+    unit.rotation.y = THREE.MathUtils.degToRad(grave.goc_xoay_z);
+  }
+
   const status = (grave.trang_thai || '').toLowerCase();
-  const isOccupied = status.includes('sử dụng') || status.includes('su dung') || status.includes('occupied');
+  const isOccupied =
+    status.includes('an táng') ||
+    status.includes('an tang') ||
+    status.includes('sử dụng') ||
+    status.includes('su dung') ||
+    status.includes('occupied');
   const isReserved = status.includes('đặt') || status.includes('dat') || status.includes('reserved');
 
   const baseMat = isSelected

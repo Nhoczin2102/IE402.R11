@@ -5,6 +5,12 @@ const { MemoryLruCache } = require('../src/utils/memoryCache');
 const { getTerrainHeight, distance3D, buildLotPolygonZWkt } = require('../src/utils/terrainMath');
 const { mapPgError } = require('../src/utils/pgErrorMapper');
 const { toGeoJsonFeatureCollection } = require('../src/utils/apiResponse');
+const {
+  DB_TO_UI_STATUS,
+  UI_TO_DB_STATUS,
+  ZONE_CODE_TO_UI_LABEL,
+  UI_LABEL_TO_ZONE_CODE,
+} = require('../src/constants/cemeteryConstants');
 const openApiSpec = require('../src/modules/docs/openapi.spec');
 
 test('MemoryLruCache: lưu trữ, đọc, đẩy LRU và xóa theo tiền tố', () => {
@@ -33,6 +39,16 @@ test('terrainMath: tính cao độ TIN/DEM, khoảng cách 3D và sinh WKT POLYG
   assert.ok(wkt.endsWith('-18.1 -10.8 1.35))'));
 });
 
+test('cemeteryConstants: ánh xạ 2 chiều trạng thái & phân khu Supabase <-> Frontend', () => {
+  assert.equal(DB_TO_UI_STATUS.DA_AN_TANG, 'Đã an táng');
+  assert.equal(DB_TO_UI_STATUS.DA_DAT_TRUOC, 'Đã đặt trước');
+  assert.equal(DB_TO_UI_STATUS.TRONG, 'Trống');
+  assert.equal(UI_TO_DB_STATUS['Đã an táng'], 'DA_AN_TANG');
+  assert.equal(UI_TO_DB_STATUS['Trống'], 'TRONG');
+  assert.equal(ZONE_CODE_TO_UI_LABEL['PK-A'], 'Khu A');
+  assert.equal(UI_LABEL_TO_ZONE_CODE['Khu B'], 'PK-B');
+});
+
 test('pgErrorMapper: ánh xạ mã lỗi PostgreSQL sang AppError đúng HTTP status', () => {
   const dup = mapPgError({ code: '23505', detail: 'Key exists' });
   assert.equal(dup.statusCode, 409);
@@ -45,13 +61,13 @@ test('pgErrorMapper: ánh xạ mã lỗi PostgreSQL sang AppError đúng HTTP st
 
 test('apiResponse: chuyển đổi bản ghi sang chuẩn OGC GeoJSON FeatureCollection', () => {
   const fc = toGeoJsonFeatureCollection(
-    [{ ma_lo_dat: 'A-01', trang_thai: 'Trống', geojson: { type: 'Point', coordinates: [1, 2, 3] } }],
+    [{ ma_lo_dat: 'LD-A01', trang_thai: 'Trống', geojson: { type: 'Point', coordinates: [106.78, 10.87, 12.5] } }],
     'geojson',
     'ma_lo_dat'
   );
   assert.equal(fc.type, 'FeatureCollection');
   assert.equal(fc.features.length, 1);
-  assert.equal(fc.features[0].id, 'A-01');
+  assert.equal(fc.features[0].id, 'LD-A01');
   assert.equal(fc.features[0].properties.trang_thai, 'Trống');
 });
 

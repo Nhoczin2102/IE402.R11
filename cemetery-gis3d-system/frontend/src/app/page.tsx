@@ -1,9 +1,10 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { GraveLot } from '../types/cemetery';
-import { cemeteryApi } from '../services/cemeteryApi';
+import { cemeteryApi, InfrastructureItem, RoadSegmentItem } from '../services/cemeteryApi';
+import { MeasureResult } from '../components/3d/utils/viewportInteraction';
 import { TopHeader } from '../components/ui/TopHeader';
 import { SearchFilterSidebar } from '../components/ui/SearchFilterSidebar';
 import { GraveDetailDrawer } from '../components/ui/GraveDetailModal';
@@ -17,11 +18,14 @@ const CemeteryViewport3D = dynamic(
 
 export default function CemeteryGIS3DPage() {
   const [graves, setGraves] = useState<GraveLot[]>([]);
+  const [infrastructures, setInfrastructures] = useState<InfrastructureItem[]>([]);
+  const [roads, setRoads] = useState<RoadSegmentItem[]>([]);
   const [selectedGrave, setSelectedGrave] = useState<GraveLot | null>(null);
   const [showWireframe, setShowWireframe] = useState(false);
   const [slopeHeatmap, setSlopeHeatmap] = useState(false);
   const [showSubsurface, setShowSubsurface] = useState(false);
   const [measureMode, setMeasureMode] = useState(false);
+  const [measureResult, setMeasureResult] = useState<MeasureResult | null>(null);
   const [routeInfo, setRouteInfo] = useState<{
     path: [number, number, number][];
     distance: number;
@@ -30,10 +34,36 @@ export default function CemeteryGIS3DPage() {
   const [cameraPreset, setCameraPreset] = useState<'overview' | 'top' | 'reset'>('overview');
   const [isAllocateOpen, setIsAllocateOpen] = useState(false);
 
-  useEffect(() => {
-    cemeteryApi.fetchGraves().then(({ data }) => setGraves(data));
+  const loadAllSpatialData = useCallback(async () => {
+    const [gravesRes, infraData, roadsData] = await Promise.all([
+      cemeteryApi.fetchGraves(),
+      cemeteryApi.fetchInfrastructures(),
+      cemeteryApi.fetchRoads(),
+    ]);
+    setGraves(gravesRes.data);
+    setInfrastructures(infraData);
+    setRoads(roadsData);
   }, []);
 
+  // Tải dữ liệu khởi tạo từ Backend PostGIS khi mở trang
+  useEffect(() => {
+    let isMounted = true;
+
+    Promise.all([
+      cemeteryApi.fetchGraves(),
+      cemeteryApi.fetchInfrastructures(),
+      cemeteryApi.fetchRoads(),
+    ]).then(([gravesRes, infraData, roadsData]) => {
+      if (!isMounted) return;
+      setGraves(gravesRes.data);
+      setInfrastructures(infraData);
+      setRoads(roadsData);
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
   // Định tuyến 3D Dijkstra từ Cổng chính
   const handleToggleRoute = async () => {
     if (routeInfo) {
@@ -48,7 +78,6 @@ export default function CemeteryGIS3DPage() {
     const [tx, , tz] = selectedGrave.position;
     const path = await cemeteryApi.getShortestRoute3D(tx, tz);
 
-    // Tính tổng khoảng cách thực tế 3D
     let totalDist = 0;
     for (let i = 0; i < path.length - 1; i++) {
       const [x1, y1, z1] = path[i];
@@ -63,84 +92,50 @@ export default function CemeteryGIS3DPage() {
     });
   };
 
-  // Cấp phát mộ mới
+  // Cấp phát mộ mới xuống PostgreSQL và đồng bộ lại toàn bộ cảnh 3D
   const handleConfirmAllocate = async (
     lotCode: string,
     status: 'Đã an táng' | 'Đã đặt trước',
     occupantName: string,
     contact: string
   ) => {
-    await cemeteryApi.allocateGrave({
+    const ok = await cemeteryApi.allocateGrave({
       ma_lo_dat: lotCode,
       trang_thai: status,
       ho_ten: occupantName,
       thong_tin_than_nhan: contact,
     });
 
-    const updated = graves.map((g) => {
-      if (g.ma_lo_dat === lotCode) {
-        const updatedLot: GraveLot = {
-          ...g,
-          trang_thai: status,
-          nguoi_mat: {
-            ho_ten: status === 'Đã đặt trước' ? `${occupantName} (Đặt trước)` : occupantName,
-            ngay_an_tang: status === 'Đã an táng' ? new Date().toLocaleDateString('vi-VN') : undefined,
-            thong_tin_than_nhan: contact,
-          },
-        };
-        setSelectedGrave(updatedLot);
-        return updatedLot;
-      }
-      return g;
-    });
-    setGraves(updated);
+    if (ok) {
+      const { data: freshGraves } = await cemeteryApi.fetchGraves();
+      setGraves(freshGraves);
+      const updatedLot = freshGraves.find((g) => g.ma_lo_dat === lotCode) || null;
+      if (updatedLot) setSelectedGrave(updatedLot);
+    }
   };
 
-  // Chuyển trạng thái (Xác nhận an táng hoặc Thu hồi lô)
-  const handleUpdateStatus = (lotCode: string, newStatus: 'Trống' | 'Đã an táng') => {
-    const updated = graves.map((g) => {
-      if (g.ma_lo_dat === lotCode) {
-        const updatedLot: GraveLot = {
-          ...g,
-          trang_thai: newStatus,
-          nguoi_mat:
-            newStatus === 'Trống'
-              ? undefined
-              : {
-                  ...g.nguoi_mat!,
-                  ho_ten: g.nguoi_mat?.ho_ten.replace(' (Đặt trước)', '') || 'Chưa cập nhật',
-                  ngay_an_tang: new Date().toLocaleDateString('vi-VN'),
-                },
-        };
-        setSelectedGrave(updatedLot);
-        return updatedLot;
-      }
-      return g;
+  // Chuyển trạng thái (Xác nhận an táng hoặc Thu hồi lô) lưu trực tiếp xuống PostgreSQL
+  const handleUpdateStatus = async (lotCode: string, newStatus: 'Trống' | 'Đã an táng') => {
+    const current = graves.find((g) => g.ma_lo_dat === lotCode);
+    const cleanedName =
+      current?.nguoi_mat?.ho_ten.replace(/\s*\(Đặt trước\)\s*/g, '').trim() || 'Chưa cập nhật';
+
+    const updatedFromApi = await cemeteryApi.updateGraveStatus(lotCode, {
+      trang_thai: newStatus,
+      ho_ten: newStatus === 'Trống' ? undefined : cleanedName,
+      thong_tin_than_nhan: newStatus === 'Trống' ? undefined : current?.nguoi_mat?.thong_tin_than_nhan,
     });
-    setGraves(updated);
+
+    if (updatedFromApi) {
+      const { data: freshGraves } = await cemeteryApi.fetchGraves();
+      setGraves(freshGraves);
+      setSelectedGrave(updatedFromApi);
+    }
   };
 
-  // Xuất file báo cáo CSV phục vụ quản lý quy hoạch
+  // Xuất file báo cáo CSV trực tiếp từ Backend PostGIS
   const handleExportCSV = () => {
-    const headers = ['MaLo', 'PhanKhu', 'ViTri', 'TrangThai', 'CaoDoZ(m)', 'DienTich(m2)', 'HoTenNguoiMat', 'ThanNhan'];
-    const rows = graves.map((g) => [
-      g.ma_lo_dat,
-      g.ma_phan_khu,
-      g.vi_tri_hang_o,
-      g.trang_thai,
-      g.cao_do_z,
-      g.dien_tich_lo,
-      g.nguoi_mat?.ho_ten || '',
-      g.nguoi_mat?.thong_tin_than_nhan || '',
-    ]);
-    const csvContent =
-      '\uFEFF' + [headers.join(','), ...rows.map((r) => r.map((v) => `"${v}"`).join(','))].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `BaoCao_QuyHoach_NghiaTrang3D_${new Date().toISOString().slice(0, 10)}.csv`;
-    link.click();
+    window.open(cemeteryApi.getExportCsvUrl(), '_blank');
   };
 
   const availableLots = graves.filter((g) => g.trang_thai === 'Trống');
@@ -176,6 +171,8 @@ export default function CemeteryGIS3DPage() {
         <main className="flex-1 min-h-0 h-full relative">
           <CemeteryViewport3D
             graves={graves}
+            infrastructures={infrastructures}
+            roads={roads}
             selectedGrave={selectedGrave}
             onSelectGrave={(grave) => {
               setSelectedGrave(grave);
@@ -184,6 +181,8 @@ export default function CemeteryGIS3DPage() {
             showWireframe={showWireframe}
             slopeHeatmap={slopeHeatmap}
             showSubsurface={showSubsurface}
+            measureMode={measureMode}
+            onMeasureResult={setMeasureResult}
             routePath={routeInfo ? routeInfo.path : null}
             cameraPreset={cameraPreset}
           />
@@ -199,10 +198,12 @@ export default function CemeteryGIS3DPage() {
             </div>
           )}
 
-          {/* Thông báo chế độ đo khoảng cách */}
+          {/* Thông báo & kết quả chế độ đo khoảng cách 3D */}
           {measureMode && (
-            <div className="absolute left-1/2 -translate-x-1/2 top-4 bg-slate-900/90 border border-cyan-500/50 text-cyan-300 px-4 py-1.5 rounded-full text-xs shadow-lg z-20">
-              Chế độ đo khoảng cách đang bật: Chọn 2 lô mộ liên tiếp để xem khoảng cách không gian 3D
+            <div className="absolute left-1/2 -translate-x-1/2 top-4 bg-slate-900/95 border border-cyan-500/60 text-cyan-200 px-4 py-2 rounded-full text-xs shadow-lg z-20">
+              {measureResult
+                ? `Khoảng cách 3D (${measureResult.fromLot} → ${measureResult.toLot}): ${measureResult.distance3D} m (ΔH = ${measureResult.deltaZ} m)`
+                : 'Chế độ đo khoảng cách đang bật: Chọn 2 lô mộ liên tiếp để xem khoảng cách không gian 3D'}
             </div>
           )}
 

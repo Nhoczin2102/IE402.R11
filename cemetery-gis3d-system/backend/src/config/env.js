@@ -18,7 +18,7 @@ const isLocalDb = dbHost === 'localhost' || dbHost === '127.0.0.1';
 const env = Object.freeze({
   nodeEnv: process.env.NODE_ENV || 'development',
   isProduction: process.env.NODE_ENV === 'production',
-  port: parseNumber(process.env.PORT, 5000),
+  port: parseNumber(process.env.PORT, 5001),
   corsOrigin: process.env.CORS_ORIGIN || '*',
   rateLimit: Object.freeze({
     windowMs: parseNumber(process.env.RATE_LIMIT_WINDOW_MS, 15 * 60 * 1000),
@@ -31,9 +31,9 @@ const env = Object.freeze({
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
     ssl: parseBoolean(process.env.DB_SSL, !isLocalDb),
-    max: parseNumber(process.env.DB_POOL_MAX, isLocalDb ? 20 : 5),
+    max: parseNumber(process.env.DB_POOL_MAX, isLocalDb ? 20 : 8),
     idleTimeoutMillis: parseNumber(process.env.DB_IDLE_TIMEOUT_MS, 30000),
-    connectionTimeoutMillis: parseNumber(process.env.DB_CONNECTION_TIMEOUT_MS, 10000),
+    connectionTimeoutMillis: parseNumber(process.env.DB_CONNECTION_TIMEOUT_MS, 20000),
   }),
 });
 
@@ -45,9 +45,7 @@ const validateEnv = () => {
   if (!env.db.database) missing.push('DB_NAME');
 
   if (missing.length > 0) {
-    throw new Error(
-      `Thiếu biến môi trường bắt buộc trong tệp .env: ${missing.join(', ')}. Vui lòng tạo .env từ .env.example.`
-    );
+    throw new Error(`Thiếu biến môi trường bắt buộc trong tệp .env: ${missing.join(', ')}.`);
   }
 };
 
