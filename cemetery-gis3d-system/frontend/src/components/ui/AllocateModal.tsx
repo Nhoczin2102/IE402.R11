@@ -1,5 +1,6 @@
 'use client';
-import React, { useState } from 'react';
+
+import React, { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import { GraveLot } from '../../types/cemetery';
 
@@ -8,7 +9,12 @@ interface AllocateModalProps {
   onClose: () => void;
   availableLots: GraveLot[];
   preselectedLotCode?: string;
-  onConfirmAllocate: (lotCode: string, status: 'Đã an táng' | 'Đã đặt trước', occupantName: string, contact: string) => void;
+  onConfirmAllocate: (
+    lotCode: string,
+    status: 'Đã an táng' | 'Đã đặt trước',
+    occupantName: string,
+    contact: string
+  ) => void;
 }
 
 export const AllocateModal: React.FC<AllocateModalProps> = ({
@@ -18,17 +24,27 @@ export const AllocateModal: React.FC<AllocateModalProps> = ({
   preselectedLotCode,
   onConfirmAllocate,
 }) => {
-  const [lotCode, setLotCode] = useState(preselectedLotCode || (availableLots[0]?.ma_lo_dat ?? ''));
+  const [lotCode, setLotCode] = useState('');
   const [status, setStatus] = useState<'Đã an táng' | 'Đã đặt trước'>('Đã an táng');
   const [occupantName, setOccupantName] = useState('');
   const [contact, setContact] = useState('');
+
+  // Tự động đồng bộ mã lô mỗi khi mở modal hoặc danh sách lô trống vừa tải xong từ API
+  useEffect(() => {
+    if (isOpen) {
+      setLotCode(preselectedLotCode || availableLots[0]?.ma_lo_dat || '');
+    }
+  }, [isOpen, preselectedLotCode, availableLots]);
 
   if (!isOpen) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!lotCode || !occupantName.trim()) return;
-    onConfirmAllocate(lotCode, status, occupantName, contact);
+    const targetLot = lotCode || availableLots[0]?.ma_lo_dat || '';
+    const trimmedName = occupantName.trim();
+    if (!targetLot || trimmedName.length < 2) return;
+
+    onConfirmAllocate(targetLot, status, trimmedName, contact.trim());
     setOccupantName('');
     setContact('');
     onClose();
@@ -39,7 +55,7 @@ export const AllocateModal: React.FC<AllocateModalProps> = ({
       <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-md shadow-2xl text-slate-100 overflow-hidden">
         <div className="px-5 py-4 border-b border-slate-800 flex justify-between items-center">
           <h3 className="font-bold text-base text-white">Cấp phát / Đăng ký Lô mộ 3D</h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-white">
+          <button type="button" onClick={onClose} className="text-slate-400 hover:text-white">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -50,13 +66,18 @@ export const AllocateModal: React.FC<AllocateModalProps> = ({
             <select
               value={lotCode}
               onChange={(e) => setLotCode(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-emerald-500"
+              disabled={availableLots.length === 0}
+              className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-emerald-500 disabled:opacity-50"
             >
-              {availableLots.map((lot) => (
-                <option key={lot.ma_lo_dat} value={lot.ma_lo_dat}>
-                  {lot.ma_lo_dat} ({lot.ma_phan_khu} - Cao độ {lot.cao_do_z}m)
-                </option>
-              ))}
+              {availableLots.length === 0 ? (
+                <option value="">Không còn lô trống</option>
+              ) : (
+                availableLots.map((lot) => (
+                  <option key={lot.ma_lo_dat} value={lot.ma_lo_dat}>
+                    {lot.ma_lo_dat} ({lot.ma_phan_khu} - Cao độ {lot.cao_do_z}m)
+                  </option>
+                ))
+              )}
             </select>
           </div>
 
@@ -85,6 +106,7 @@ export const AllocateModal: React.FC<AllocateModalProps> = ({
             <input
               type="text"
               required
+              minLength={2}
               placeholder="Nhập họ tên đầy đủ..."
               value={occupantName}
               onChange={(e) => setOccupantName(e.target.value)}
@@ -113,7 +135,8 @@ export const AllocateModal: React.FC<AllocateModalProps> = ({
             </button>
             <button
               type="submit"
-              className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold shadow"
+              disabled={availableLots.length === 0}
+              className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold shadow disabled:opacity-50"
             >
               Xác nhận &amp; Cập nhật 3D
             </button>

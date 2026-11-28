@@ -1,23 +1,19 @@
 import { GraveLot } from '../types/cemetery';
-import { INITIAL_GRAVES, getTerrainHeight } from '../data/mockCemeteryData';
 
-const RAW_API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api';
-const API_BASE_URL = RAW_API_URL.endsWith('/api')
-  ? RAW_API_URL
-  : `${RAW_API_URL.replace(/\/$/, '')}/api`;
+const API_BASE = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api').replace(/\/+$/, '');
 
 export interface InfrastructureItem {
   ma_ha_tang: string;
   ma_phan_khu: string | null;
   ten_ha_tang: string;
-  loai_ha_tang: 'CONG' | 'DAI_TUONG_NIEM' | 'NHA_TANG_LE' | 'CAY_XANH' | string;
-  dien_tich_xay_dung: number;
-  chieu_cao_3d: number;
-  ban_kinh_cach_ly: number;
+  loai_ha_tang: string;
+  dien_tich_xay_dung: number | string;
+  chieu_cao_3d: number | string;
+  ban_kinh_cach_ly: number | string;
   geojson: {
-    type: 'MultiPolygon';
-    coordinates: number[][][][];
-  };
+    type: 'Polygon' | 'MultiPolygon';
+    coordinates: number[][][] | number[][][][];
+  } | null;
 }
 
 export interface RoadSegmentItem {
@@ -25,112 +21,133 @@ export interface RoadSegmentItem {
   ma_phan_khu: string | null;
   ten_tuyen_duong: string;
   loai_duong: string;
-  chieu_rong_duong: number;
-  chieu_dai_3d_m: number;
+  chieu_rong_duong: number | string;
+  dien_tich_duong: number | string;
+  chieu_dai_3d_m?: number | string;
   geojson: {
     type: 'LineString';
     coordinates: number[][];
-  };
+  } | null;
 }
 
 export const cemeteryApi = {
-  // Lấy danh sách lô mộ 3D từ PostGIS (Fallback về mock data nếu BE offline)
-  async fetchGraves(): Promise<{ data: GraveLot[]; isLiveBackend: boolean }> {
+  async fetchGraves(): Promise<{ data: GraveLot[] }> {
     try {
-      const res = await fetch(`${API_BASE_URL}/graves`, { cache: 'no-store' });
-      if (!res.ok) throw new Error('Backend response error');
-      const data: GraveLot[] = await res.json();
-      return { data, isLiveBackend: true };
-    } catch {
-      return { data: INITIAL_GRAVES, isLiveBackend: false };
+      const res = await fetch(`${API_BASE}/graves`, { cache: 'no-store' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+      const list = Array.isArray(json) ? json : json.data || [];
+      return { data: list };
+    } catch (err) {
+      console.error('[cemeteryApi] Lỗi tải danh sách lô mộ:', err);
+      return { data: [] };
     }
   },
 
-  // Gửi yêu cầu cấp phát mộ mới xuống PostgreSQL
+  async fetchInfrastructures(): Promise<InfrastructureItem[]> {
+    try {
+      const res = await fetch(`${API_BASE}/zones/infrastructure`, { cache: 'no-store' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+      return Array.isArray(json) ? json : json.data || [];
+    } catch (err) {
+      console.error('[cemeteryApi] Lỗi tải hạ tầng:', err);
+      return [];
+    }
+  },
+
+  async fetchRoads(): Promise<RoadSegmentItem[]> {
+    try {
+      const res = await fetch(`${API_BASE}/zones/roads`, { cache: 'no-store' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+      return Array.isArray(json) ? json : json.data || [];
+    } catch (err) {
+      console.error('[cemeteryApi] Lỗi tải tuyến giao thông:', err);
+      return [];
+    }
+  },
+
+  async getShortestRoute3D(
+    targetX: number,
+    targetZ: number,
+    startNode = 'GATE'
+  ): Promise<[number, number, number][]> {
+    try {
+      const url = `${API_BASE}/routing/shortest-path?targetX=${encodeURIComponent(
+        targetX
+      )}&targetZ=${encodeURIComponent(targetZ)}&startNode=${encodeURIComponent(startNode)}`;
+      const res = await fetch(url, { cache: 'no-store' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+      return json.routePath || [];
+    } catch (err) {
+      console.error('[cemeteryApi] Lỗi tìm đường 3D:', err);
+      return [];
+    }
+  },
+
   async allocateGrave(payload: {
     ma_lo_dat: string;
     trang_thai: 'Đã an táng' | 'Đã đặt trước';
     ho_ten: string;
-    thong_tin_than_nhan: string;
+    ngay_sinh?: string;
+    ngay_mat?: string;
+    ngay_an_tang?: string;
+    thong_tin_than_nhan?: string;
   }): Promise<boolean> {
     try {
-      const res = await fetch(`${API_BASE_URL}/graves/allocate`, {
+      const res = await fetch(`${API_BASE}/graves/allocate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      return res.ok;
-    } catch {
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => null);
+        console.error('[cemeteryApi] Lỗi cấp phát lô:', errJson || res.status);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      console.error('[cemeteryApi] Lỗi kết nối khi cấp phát lô:', err);
       return false;
     }
   },
 
-  // Cập nhật trạng thái hoặc thu hồi lô mộ
   async updateGraveStatus(
-    maLoDat: string,
+    lotCode: string,
     payload: {
       trang_thai: 'Trống' | 'Đã an táng' | 'Đã đặt trước';
       ho_ten?: string;
+      ngay_sinh?: string;
+      ngay_mat?: string;
+      ngay_an_tang?: string;
       thong_tin_than_nhan?: string;
     }
   ): Promise<GraveLot | null> {
     try {
-      const res = await fetch(`${API_BASE_URL}/graves/${encodeURIComponent(maLoDat)}`, {
+      const res = await fetch(`${API_BASE}/graves/${encodeURIComponent(lotCode)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      if (!res.ok) return null;
+      if (!res.ok) {
+  const errJson = await res.json().catch(() => null);
+  console.warn(
+    `[cemeteryApi] Lỗi cập nhật trạng thái lô (HTTP ${res.status}):`,
+    JSON.stringify(errJson, null, 2)
+  );
+  return null;
+}
       const json = await res.json();
-      return json?.data || null;
-    } catch {
+      return json.data || null;
+    } catch (err) {
+      console.error('[cemeteryApi] Lỗi kết nối khi cập nhật lô:', err);
       return null;
     }
   },
 
-  // Gọi API tính đường dẫn 3D ngắn nhất từ Cổng chính
-  async getShortestRoute3D(targetX: number, targetZ: number): Promise<[number, number, number][]> {
-    try {
-      const res = await fetch(
-        `${API_BASE_URL}/routing/shortest-path?targetX=${targetX}&targetZ=${targetZ}`,
-        { cache: 'no-store' }
-      );
-      if (!res.ok) throw new Error('Routing API error');
-      const json = await res.json();
-      return json.routePath || json?.data?.routePath;
-    } catch {
-      const gatePoint: [number, number, number] = [0, getTerrainHeight(0, 42), 42];
-      const midJunction: [number, number, number] = [0, getTerrainHeight(0, targetZ), targetZ];
-      const targetPoint: [number, number, number] = [targetX, getTerrainHeight(targetX, targetZ), targetZ];
-      return [gatePoint, midJunction, targetPoint];
-    }
-  },
-
-  // Lấy danh sách công trình hạ tầng 3D từ PostGIS
-  async fetchInfrastructures(): Promise<InfrastructureItem[]> {
-    try {
-      const res = await fetch(`${API_BASE_URL}/zones/infrastructure`, { cache: 'no-store' });
-      if (!res.ok) return [];
-      const json = await res.json();
-      return json?.data || [];
-    } catch {
-      return [];
-    }
-  },
-
-  // Lấy danh sách tuyến đường nội bộ 3D từ PostGIS
-  async fetchRoads(): Promise<RoadSegmentItem[]> {
-    try {
-      const res = await fetch(`${API_BASE_URL}/zones/roads`, { cache: 'no-store' });
-      if (!res.ok) return [];
-      const json = await res.json();
-      return json?.data || [];
-    } catch {
-      return [];
-    }
-  },
-
   getExportCsvUrl(): string {
-    return `${API_BASE_URL}/graves/export/csv`;
+    return `${API_BASE}/graves/export/csv`;
   },
 };

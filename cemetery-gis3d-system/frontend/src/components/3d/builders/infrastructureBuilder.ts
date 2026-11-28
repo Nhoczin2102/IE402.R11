@@ -1,320 +1,302 @@
 import * as THREE from 'three';
-import { createProceduralTexture, createLabelTexture } from '../utils/threeHelpers';
-import { getTerrainHeight } from './terrainBuilder';
 import { InfrastructureItem, RoadSegmentItem } from '../../../services/cemeteryApi';
+import { getTerrainHeight } from './terrainBuilder';
 
-function getPolygonBounds(geojson?: InfrastructureItem['geojson']) {
-  const ring = geojson?.coordinates?.[0]?.[0];
-  if (!ring || ring.length === 0) return null;
+function extractPolygonRing(geojson: InfrastructureItem['geojson']): [number, number][] {
+  if (!geojson?.coordinates) return [];
+  if (geojson.type === 'MultiPolygon') {
+    const coords = geojson.coordinates as number[][][][];
+    return (coords[0]?.[0] || []).map((p) => [Number(p[0]), Number(p[1])]);
+  }
+  if (geojson.type === 'Polygon') {
+    const coords = geojson.coordinates as number[][][];
+    return (coords[0] || []).map((p) => [Number(p[0]), Number(p[1])]);
+  }
+  return [];
+}
 
+function getRingCentroid(ring: [number, number][]): [number, number] {
+  if (ring.length === 0) return [0, 0];
+  const pts =
+    ring.length > 1 && ring[0][0] === ring[ring.length - 1][0] && ring[0][1] === ring[ring.length - 1][1]
+      ? ring.slice(0, -1)
+      : ring;
+  const cx = pts.reduce((sum, p) => sum + p[0], 0) / pts.length;
+  const cz = pts.reduce((sum, p) => sum + p[1], 0) / pts.length;
+  return [cx, cz];
+}
+
+function getRingBounds(ring: [number, number][]) {
   let minX = Infinity;
   let maxX = -Infinity;
   let minZ = Infinity;
   let maxZ = -Infinity;
-
-  for (const pt of ring) {
-    const [x, z] = pt;
+  for (const [x, z] of ring) {
     if (x < minX) minX = x;
     if (x > maxX) maxX = x;
     if (z < minZ) minZ = z;
     if (z > maxZ) maxZ = z;
   }
-
-  return {
-    centerX: (minX + maxX) / 2,
-    centerZ: (minZ + maxZ) / 2,
-    width: Math.max(maxX - minX, 2),
-    depth: Math.max(maxZ - minZ, 2),
-  };
+  return { minX, maxX, minZ, maxZ, width: maxX - minX, depth: maxZ - minZ };
 }
 
-function createTerrainConformingStrip(
-  width: number,
+function createExtrudedFootprint(
+  ring: [number, number][],
   height: number,
-  length: number,
-  segments: number,
   material: THREE.Material,
-  centerX: number,
-  centerZ: number,
-  rotationY: number,
-  yOffset: number
-): THREE.Mesh {
-  const geo = new THREE.BoxGeometry(width, height, length, 2, 1, segments);
-  const pos = geo.attributes.position;
-  const cosR = Math.cos(rotationY);
-  const sinR = Math.sin(rotationY);
+  yOffset = -0.2,
+  castShadow = true
+): THREE.Mesh | null {
+  if (ring.length < 3) return null;
+  const shape = new THREE.Shape();
+  ring.forEach(([x, z], idx) => {
+    // Khi xoay -PI/2 quanh trục X: (shapeX, shapeY) -> (x, 0, -shapeY)
+    if (idx === 0) shape.moveTo(x, -z);
+    else shape.lineTo(x, -z);
+  });
 
-  for (let i = 0; i < pos.count; i++) {
-    const lx = pos.getX(i);
-    const ly = pos.getY(i);
-    const lz = pos.getZ(i);
+  const geometry = new THREE.ExtrudeGeometry(shape, {
+    depth: height,
+    bevelEnabled: false,
+  });
+  geometry.rotateX(-Math.PI / 2);
 
-    const wx = centerX + lx * cosR + lz * sinR;
-    const wz = centerZ - lx * sinR + lz * cosR;
-    const groundY = getTerrainHeight(wx, wz);
-
-    pos.setY(i, ly + groundY + yOffset);
-  }
-
-  geo.computeVertexNormals();
-  const mesh = new THREE.Mesh(geo, material);
+  const [cx, cz] = getRingCentroid(ring);
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.position.y = getTerrainHeight(cx, cz) + yOffset;
+  mesh.castShadow = castShadow;
   mesh.receiveShadow = true;
   return mesh;
+}
+
+function buildGate3D(
+  ring: [number, number][],
+  height: number,
+  pillarMat: THREE.Material,
+  roofMat: THREE.Material
+): THREE.Group {
+  const grp = new THREE.Group();
+  const [cx, cz] = getRingCentroid(ring);
+  const { width, depth } = getRingBounds(ring);
+  const baseY = getTerrainHeight(cx, cz);
+
+  const pillarGeo = new THREE.BoxGeometry(1.1, height, 1.1);
+  const leftPillar = new THREE.Mesh(pillarGeo, pillarMat);
+  leftPillar.position.set(cx - width / 2 + 0.8, baseY + height / 2, cz);
+  leftPillar.castShadow = true;
+  leftPillar.receiveShadow = true;
+
+  const rightPillar = new THREE.Mesh(pillarGeo, pillarMat);
+  rightPillar.position.set(cx + width / 2 - 0.8, baseY + height / 2, cz);
+  rightPillar.castShadow = true;
+  rightPillar.receiveShadow = true;
+
+  const beamGeo = new THREE.BoxGeometry(width + 0.8, 1.0, Math.max(depth, 2.4));
+  const beam = new THREE.Mesh(beamGeo, roofMat);
+  beam.position.set(cx, baseY + height + 0.3, cz);
+  beam.castShadow = true;
+
+  const topRoofGeo = new THREE.BoxGeometry(width * 0.72, 0.7, Math.max(depth * 0.8, 1.8));
+  const topRoof = new THREE.Mesh(topRoofGeo, roofMat);
+  topRoof.position.set(cx, baseY + height + 1.1, cz);
+  topRoof.castShadow = true;
+
+  grp.add(leftPillar, rightPillar, beam, topRoof);
+  return grp;
+}
+
+function buildMonument3D(
+  ring: [number, number][],
+  height: number,
+  stoneMat: THREE.Material,
+  accentMat: THREE.Material
+): THREE.Group {
+  const grp = new THREE.Group();
+  const [cx, cz] = getRingCentroid(ring);
+  const baseY = getTerrainHeight(cx, cz);
+
+  const basePlaza = new THREE.Mesh(new THREE.CylinderGeometry(7.5, 7.8, 0.6, 32), stoneMat);
+  basePlaza.position.set(cx, baseY + 0.2, cz);
+  basePlaza.receiveShadow = true;
+
+  const pedestal = new THREE.Mesh(new THREE.CylinderGeometry(3.2, 4.0, 2.2, 16), stoneMat);
+  pedestal.position.set(cx, baseY + 1.5, cz);
+  pedestal.castShadow = true;
+
+  const obeliskHeight = Math.max(8, height - 2.8);
+  const obelisk = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 1.6, obeliskHeight, 8), accentMat);
+  obelisk.position.set(cx, baseY + 2.6 + obeliskHeight / 2, cz);
+  obelisk.castShadow = true;
+
+  grp.add(basePlaza, pedestal, obelisk);
+  return grp;
+}
+
+function buildBuilding3D(
+  ring: [number, number][],
+  height: number,
+  wallMat: THREE.Material,
+  roofMat: THREE.Material
+): THREE.Group {
+  const grp = new THREE.Group();
+  const [cx, cz] = getRingCentroid(ring);
+  const { width, depth } = getRingBounds(ring);
+  const baseY = getTerrainHeight(cx, cz);
+
+  const bodyHeight = Math.max(3, height - 1.8);
+  const body = new THREE.Mesh(new THREE.BoxGeometry(width, bodyHeight, depth), wallMat);
+  body.position.set(cx, baseY + bodyHeight / 2, cz);
+  body.castShadow = true;
+  body.receiveShadow = true;
+
+  const roof = new THREE.Mesh(new THREE.ConeGeometry(Math.hypot(width, depth) * 0.54, 2.2, 4), roofMat);
+  roof.rotation.y = Math.PI / 4;
+  roof.position.set(cx, baseY + bodyHeight + 1.1, cz);
+  roof.castShadow = true;
+
+  grp.add(body, roof);
+  return grp;
+}
+
+function buildTree3D(
+  cx: number,
+  cz: number,
+  height: number,
+  isBig: boolean,
+  trunkMat: THREE.Material,
+  foliageMat: THREE.Material
+): THREE.Group {
+  const grp = new THREE.Group();
+  const baseY = getTerrainHeight(cx, cz);
+  const trunkH = isBig ? height * 0.35 : height * 0.4;
+  const trunkR = isBig ? 0.55 : 0.25;
+  const canopyR = isBig ? 4.0 : 1.7;
+
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(trunkR * 0.75, trunkR, trunkH, 8), trunkMat);
+  trunk.position.set(cx, baseY + trunkH / 2, cz);
+  trunk.castShadow = true;
+
+  const canopy = new THREE.Mesh(new THREE.DodecahedronGeometry(canopyR, 1), foliageMat);
+  canopy.position.set(cx, baseY + trunkH + canopyR * 0.72, cz);
+  canopy.castShadow = true;
+  canopy.receiveShadow = true;
+
+  grp.add(trunk, canopy);
+  return grp;
+}
+
+function buildRoadRibbon(road: RoadSegmentItem, roadMat: THREE.Material): THREE.Group | null {
+  const coords = road.geojson?.coordinates;
+  if (!coords || coords.length < 2) return null;
+
+  const grp = new THREE.Group();
+  const width = Number(road.chieu_rong_duong) || 3.0;
+
+  for (let i = 0; i < coords.length - 1; i++) {
+    const [x1, z1] = coords[i];
+    const [x2, z2] = coords[i + 1];
+    const y1 = getTerrainHeight(x1, z1) + 0.08;
+    const y2 = getTerrainHeight(x2, z2) + 0.08;
+
+    const p1 = new THREE.Vector3(x1, y1, z1);
+    const p2 = new THREE.Vector3(x2, y2, z2);
+    const len = p1.distanceTo(p2);
+    if (len < 0.05) continue;
+
+    const segGeo = new THREE.BoxGeometry(width, 0.12, len + 0.25);
+    const segMesh = new THREE.Mesh(segGeo, roadMat);
+    segMesh.position.copy(p1).add(p2).multiplyScalar(0.5);
+    segMesh.lookAt(p2);
+    segMesh.receiveShadow = true;
+    grp.add(segMesh);
+  }
+
+  return grp;
 }
 
 export function createInfrastructureGroup(
   infrastructures: InfrastructureItem[] = [],
   roads: RoadSegmentItem[] = [],
-  maxAnisotropy = 4
+  _maxAnisotropy = 4
 ): THREE.Group {
   const group = new THREE.Group();
+  group.name = 'CemeteryInfrastructureGroup';
 
-  const roadTex = createProceduralTexture('road', '#334155', '#475569', 2, 22);
-  const roadMat = new THREE.MeshStandardMaterial({
-    map: roadTex,
-    roughness: 0.9,
-    metalness: 0.02,
-  });
+  // Vật liệu dùng chung để tối ưu draw call & bộ nhớ GPU
+  const roadMat = new THREE.MeshStandardMaterial({ color: '#334155', roughness: 0.9, metalness: 0.05 });
+  const parkingMat = new THREE.MeshStandardMaterial({ color: '#1e293b', roughness: 0.92, metalness: 0.05 });
+  const fenceMat = new THREE.MeshStandardMaterial({ color: '#94a3b8', roughness: 0.75, metalness: 0.15 });
+  const gatePillarMat = new THREE.MeshStandardMaterial({ color: '#cbd5e1', roughness: 0.6, metalness: 0.1 });
+  const gateRoofMat = new THREE.MeshStandardMaterial({ color: '#b45309', roughness: 0.5, metalness: 0.2 });
+  const monumentStoneMat = new THREE.MeshStandardMaterial({ color: '#e2e8f0', roughness: 0.55, metalness: 0.15 });
+  const monumentAccentMat = new THREE.MeshStandardMaterial({ color: '#eab308', roughness: 0.35, metalness: 0.6 });
+  const buildingWallMat = new THREE.MeshStandardMaterial({ color: '#e2e8f0', roughness: 0.7, metalness: 0.05 });
+  const buildingRoofMat = new THREE.MeshStandardMaterial({ color: '#3730a3', roughness: 0.6, metalness: 0.15 });
+  const trunkMat = new THREE.MeshStandardMaterial({ color: '#5c4033', roughness: 0.95 });
+  const foliageBigMat = new THREE.MeshStandardMaterial({ color: '#15803d', roughness: 0.85 });
+  const foliageMedMat = new THREE.MeshStandardMaterial({ color: '#22c55e', roughness: 0.85 });
+  const bushMat = new THREE.MeshStandardMaterial({ color: '#4d7c0f', roughness: 0.9 });
 
-  const crossRoadTex = createProceduralTexture('road', '#334155', '#475569', 22, 2);
-  const crossRoadMat = new THREE.MeshStandardMaterial({
-    map: crossRoadTex,
-    roughness: 0.9,
-    metalness: 0.02,
-  });
+  // 1. Dựng 10 tuyến đường giao thông nội bộ
+  for (const road of roads) {
+    const ribbon = buildRoadRibbon(road, roadMat);
+    if (ribbon) group.add(ribbon);
+  }
 
-  const curbMat = new THREE.MeshStandardMaterial({
-    color: '#64748b',
-    roughness: 0.82,
-    metalness: 0.05,
-  });
+  // Gom tọa độ 165 bụi cây để dựng bằng 1 InstancedMesh duy nhất
+  const bushPositions: [number, number, number][] = [];
 
-  // Trục đường chính Bắc - Nam bám sát địa hình
-  const mainRoad = createTerrainConformingStrip(5.2, 0.08, 92, 64, roadMat, 0, 0, 0, 0.05);
-  group.add(mainRoad);
+  // 2. Dựng 187 đối tượng hạ tầng theo tiền tố ma_ha_tang
+  for (const inf of infrastructures) {
+    const id = inf.ma_ha_tang || '';
+    const height = Number(inf.chieu_cao_3d) || 2.0;
+    const ring = extractPolygonRing(inf.geojson);
+    if (ring.length < 3) continue;
 
-  // Trục đường ngang Đông - Tây bám sát địa hình
-  const crossRoad = createTerrainConformingStrip(92, 0.08, 4.4, 64, crossRoadMat, 0, 0, Math.PI / 2, 0.05);
-  group.add(crossRoad);
+    if (id.startsWith('HT-BUSH')) {
+      const [cx, cz] = getRingCentroid(ring);
+      bushPositions.push([cx, getTerrainHeight(cx, cz) + height / 2 - 0.1, cz]);
+      continue;
+    }
 
-  // Bó vỉa hai bên trục đường chính
-  [-2.75, 2.75].forEach((x) => {
-    const curb = createTerrainConformingStrip(0.28, 0.14, 92, 64, curbMat, x, 0, 0, 0.08);
-    curb.castShadow = true;
-    group.add(curb);
-  });
+    if (id.startsWith('HT-FENCE')) {
+      const fence = createExtrudedFootprint(ring, height || 2.4, fenceMat, -0.25, true);
+      if (fence) group.add(fence);
+    } else if (id.startsWith('HT-PARK')) {
+      const park = createExtrudedFootprint(ring, 0.25, parkingMat, -0.05, false);
+      if (park) group.add(park);
+    } else if (id.startsWith('HT-GATE')) {
+      group.add(buildGate3D(ring, height || 6.0, gatePillarMat, gateRoofMat));
+    } else if (id.startsWith('HT-MON')) {
+      group.add(buildMonument3D(ring, height || 15.0, monumentStoneMat, monumentAccentMat));
+    } else if (id.startsWith('HT-BLD')) {
+      group.add(buildBuilding3D(ring, height || 7.5, buildingWallMat, buildingRoofMat));
+    } else if (id.startsWith('HT-BIGTREE')) {
+      const [cx, cz] = getRingCentroid(ring);
+      group.add(buildTree3D(cx, cz, height || 14.0, true, trunkMat, foliageBigMat));
+    } else if (id.startsWith('HT-TREE')) {
+      const [cx, cz] = getRingCentroid(ring);
+      group.add(buildTree3D(cx, cz, height || 5.5, false, trunkMat, foliageMedMat));
+    }
+  }
 
-  // Tuyến đường nhánh từ bảng tuyen_giao_thong (PostGIS) bám sát địa hình
-  roads
-    .filter((r) => r.loai_duong !== 'TRUC_CHINH')
-    .forEach((road) => {
-      const coords = road.geojson?.coordinates || [];
-      const roadWidth = Number(road.chieu_rong_duong) || 3.5;
+  // 3. InstancedMesh cho 165 bụi cây vuông sát tường (60 FPS)
+  if (bushPositions.length > 0) {
+    const bushGeo = new THREE.BoxGeometry(2.2, 1.2, 2.2);
+    const bushInstanced = new THREE.InstancedMesh(bushGeo, bushMat, bushPositions.length);
+    const dummy = new THREE.Object3D();
 
-      for (let i = 0; i < coords.length - 1; i++) {
-        const [x1, z1] = coords[i];
-        const [x2, z2] = coords[i + 1];
-        const dx = x2 - x1;
-        const dz = z2 - z1;
-        const len = Math.hypot(dx, dz);
-        if (len < 0.2) continue;
-
-        const midX = (x1 + x2) / 2;
-        const midZ = (z1 + z2) / 2;
-        const angle = Math.atan2(dx, dz);
-        const segSteps = Math.max(4, Math.ceil(len / 1.5));
-
-        const segMesh = createTerrainConformingStrip(
-          roadWidth,
-          0.07,
-          len,
-          segSteps,
-          roadMat,
-          midX,
-          midZ,
-          angle,
-          0.05
-        );
-        group.add(segMesh);
-      }
+    bushPositions.forEach(([x, y, z], index) => {
+      dummy.position.set(x, y, z);
+      dummy.updateMatrix();
+      bushInstanced.setMatrixAt(index, dummy.matrix);
     });
 
-  // Công trình hạ tầng 3D từ bảng ha_tang (PostGIS)
-  const stoneMat = new THREE.MeshStandardMaterial({ color: '#cbd5e1', roughness: 0.55, metalness: 0.15 });
-  const roofMat = new THREE.MeshStandardMaterial({ color: '#991b1b', roughness: 0.6, metalness: 0.1 });
-  const monumentMat = new THREE.MeshStandardMaterial({ color: '#e2e8f0', roughness: 0.35, metalness: 0.25 });
-  const waterMat = new THREE.MeshStandardMaterial({ color: '#0284c7', roughness: 0.15, metalness: 0.6 });
-  const bufferRingMat = new THREE.MeshBasicMaterial({
-    color: '#f59e0b',
-    transparent: true,
-    opacity: 0.22,
-    side: THREE.DoubleSide,
-  });
-
-  infrastructures.forEach((item) => {
-    const bounds = getPolygonBounds(item.geojson);
-    if (!bounds) return;
-
-    const { centerX, centerZ, width, depth } = bounds;
-    const height = Math.min(Number(item.chieu_cao_3d) || 6, 15);
-    const groundY = getTerrainHeight(centerX, centerZ);
-    const infraUnit = new THREE.Group();
-    infraUnit.position.set(centerX, groundY, centerZ);
-
-    if (item.loai_ha_tang === 'CONG') {
-      const pillarGeo = new THREE.BoxGeometry(1.1, height * 0.78, 1.1);
-      const leftPillar = new THREE.Mesh(pillarGeo, stoneMat);
-      leftPillar.position.set(-width * 0.38, (height * 0.78) / 2, 0);
-      leftPillar.castShadow = true;
-
-      const rightPillar = new THREE.Mesh(pillarGeo, stoneMat);
-      rightPillar.position.set(width * 0.38, (height * 0.78) / 2, 0);
-      rightPillar.castShadow = true;
-
-      const beam = new THREE.Mesh(new THREE.BoxGeometry(width * 0.95, 1.1, 1.4), roofMat);
-      beam.position.set(0, height * 0.82, 0);
-      beam.castShadow = true;
-
-      const topRoof = new THREE.Mesh(new THREE.BoxGeometry(width * 0.6, 0.8, 1.6), roofMat);
-      topRoof.position.set(0, height * 0.94, 0);
-
-      infraUnit.add(leftPillar, rightPillar, beam, topRoof);
-    } else if (item.loai_ha_tang === 'DAI_TUONG_NIEM') {
-      const base = new THREE.Mesh(new THREE.CylinderGeometry(width * 0.55, width * 0.65, 1.2, 24), stoneMat);
-      base.position.y = 0.6;
-      base.receiveShadow = true;
-
-      const obelisk = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 1.45, height - 1.2, 4), monumentMat);
-      obelisk.position.y = 1.2 + (height - 1.2) / 2;
-      obelisk.castShadow = true;
-
-      infraUnit.add(base, obelisk);
-    } else if (item.loai_ha_tang === 'NHA_TANG_LE') {
-      const body = new THREE.Mesh(new THREE.BoxGeometry(width, height * 0.65, depth), stoneMat);
-      body.position.y = (height * 0.65) / 2;
-      body.castShadow = true;
-      body.receiveShadow = true;
-
-      const roof = new THREE.Mesh(new THREE.ConeGeometry(Math.max(width, depth) * 0.72, height * 0.35, 4), roofMat);
-      roof.position.y = height * 0.65 + (height * 0.35) / 2;
-      roof.rotation.y = Math.PI / 4;
-      roof.castShadow = true;
-
-      infraUnit.add(body, roof);
-    } else {
-      const basin = new THREE.Mesh(new THREE.CylinderGeometry(width * 0.45, width * 0.45, 0.25, 24), waterMat);
-      basin.position.y = 0.13;
-      basin.receiveShadow = true;
-      infraUnit.add(basin);
-    }
-
-    const bufferR = Number(item.ban_kinh_cach_ly) || 0;
-    if (bufferR > 0) {
-      const ringGeo = new THREE.RingGeometry(bufferR - 0.15, bufferR, 36);
-      const ringMesh = new THREE.Mesh(ringGeo, bufferRingMat);
-      ringMesh.rotation.x = -Math.PI / 2;
-      ringMesh.position.y = 0.04;
-      infraUnit.add(ringMesh);
-    }
-
-    const labelTex = createLabelTexture(item.ten_ha_tang, maxAnisotropy);
-    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: labelTex, transparent: true }));
-    sprite.position.set(0, height + 1.4, 0);
-    sprite.scale.set(6.5, 1.6, 1);
-    infraUnit.add(sprite);
-
-    group.add(infraUnit);
-  });
-
-  // Hàng cây cảnh quan dọc trục đường
-  const trunkMat = new THREE.MeshStandardMaterial({ color: '#451a03', roughness: 0.9 });
-  const foliageMatA = new THREE.MeshStandardMaterial({ color: '#15803d', roughness: 0.78, metalness: 0.02 });
-  const foliageMatB = new THREE.MeshStandardMaterial({ color: '#166534', roughness: 0.82, metalness: 0.02 });
-
-  const trunkGeo = new THREE.CylinderGeometry(0.16, 0.28, 1.8, 10);
-  const tier1Geo = new THREE.ConeGeometry(1.45, 2.2, 12);
-  const tier2Geo = new THREE.ConeGeometry(1.12, 1.9, 12);
-  const tier3Geo = new THREE.ConeGeometry(0.75, 1.5, 12);
-
-  const treeCoords: [number, number][] = [
-    [-4.8, -26], [4.8, -26],
-    [-4.8, -14], [4.8, -14],
-    [-4.8, 14], [4.8, 14],
-    [-4.8, 26], [4.8, 26],
-    [-26, -4.4], [-26, 4.4],
-    [26, -4.4], [26, 4.4],
-  ];
-
-  treeCoords.forEach(([tx, tz], idx) => {
-    const tree = new THREE.Group();
-    const trunk = new THREE.Mesh(trunkGeo, trunkMat);
-    trunk.position.y = 0.9;
-    trunk.castShadow = true;
-    trunk.receiveShadow = true;
-
-    const t1 = new THREE.Mesh(tier1Geo, foliageMatB);
-    t1.position.y = 2.3;
-    t1.castShadow = true;
-    t1.receiveShadow = true;
-
-    const t2 = new THREE.Mesh(tier2Geo, foliageMatA);
-    t2.position.y = 3.35;
-    t2.castShadow = true;
-    t2.receiveShadow = true;
-
-    const t3 = new THREE.Mesh(tier3Geo, foliageMatA);
-    t3.position.y = 4.25;
-    t3.castShadow = true;
-
-    tree.add(trunk, t1, t2, t3);
-    const scale = 0.9 + (idx % 3) * 0.12;
-    tree.scale.set(scale, scale, scale);
-    tree.rotation.y = idx * 0.8;
-    tree.position.set(tx, getTerrainHeight(tx, tz), tz);
-    group.add(tree);
-  });
-
-  // Cột đèn chiếu sáng dọc trục chính
-  const poleMat = new THREE.MeshStandardMaterial({ color: '#1e293b', roughness: 0.45, metalness: 0.75 });
-  const bulbMat = new THREE.MeshStandardMaterial({
-    color: '#fef08a',
-    emissive: '#facc15',
-    emissiveIntensity: 1.5,
-    roughness: 0.25,
-  });
-  const poleGeo = new THREE.CylinderGeometry(0.08, 0.12, 4.4, 10);
-  const armGeo = new THREE.BoxGeometry(0.75, 0.08, 0.08);
-  const bulbGeo = new THREE.SphereGeometry(0.18, 14, 14);
-
-  const lampCoords: [number, number, number][] = [
-    [-3.2, -20, 1], [3.2, -20, -1],
-    [-3.2, -7, 1], [3.2, -7, -1],
-    [-3.2, 7, 1], [3.2, 7, -1],
-    [-3.2, 20, 1], [3.2, 20, -1],
-  ];
-
-  lampCoords.forEach(([lx, lz, dir]) => {
-    const lamp = new THREE.Group();
-    const pole = new THREE.Mesh(poleGeo, poleMat);
-    pole.position.y = 2.2;
-    pole.castShadow = true;
-
-    const arm = new THREE.Mesh(armGeo, poleMat);
-    arm.position.set(dir * 0.35, 4.35, 0);
-
-    const bulb = new THREE.Mesh(bulbGeo, bulbMat);
-    bulb.position.set(dir * 0.68, 4.22, 0);
-
-    lamp.add(pole, arm, bulb);
-    lamp.position.set(lx, getTerrainHeight(lx, lz), lz);
-    group.add(lamp);
-  });
-
-  const gridHelper = new THREE.GridHelper(120, 40, '#1e293b', '#0f172a');
-  gridHelper.position.y = 0.005;
-  (gridHelper.material as THREE.Material).transparent = true;
-  (gridHelper.material as THREE.Material).opacity = 0.2;
-  group.add(gridHelper);
+    bushInstanced.instanceMatrix.needsUpdate = true;
+    bushInstanced.castShadow = true;
+    bushInstanced.receiveShadow = true;
+    group.add(bushInstanced);
+  }
 
   return group;
 }
