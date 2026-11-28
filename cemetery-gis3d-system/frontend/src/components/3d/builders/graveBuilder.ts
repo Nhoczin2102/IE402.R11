@@ -6,6 +6,29 @@ import { getTerrainHeight } from './terrainBuilder';
 const MONUMENT_CENTER_X = 0;
 const MONUMENT_CENTER_Z = -21.5;
 
+// Shared geometries & materials dùng chung cho dấu hiệu "Đặt trước" (tối ưu hiệu năng)
+const markerPostGeo = new THREE.CylinderGeometry(0.055, 0.065, 0.65, 10);
+const markerCapGeo = new THREE.SphereGeometry(0.085, 12, 12);
+const reserveSignPostGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.72, 10);
+const reserveSignBoardGeo = new THREE.BoxGeometry(0.95, 0.34, 0.06);
+
+const markerPostMat = new THREE.MeshStandardMaterial({
+  color: '#f59e0b',
+  roughness: 0.4,
+  metalness: 0.25,
+});
+const markerCapMat = new THREE.MeshStandardMaterial({
+  color: '#fef08a',
+  emissive: '#f59e0b',
+  emissiveIntensity: 0.45,
+  roughness: 0.3,
+});
+const reserveBoardMat = new THREE.MeshStandardMaterial({
+  color: '#b45309',
+  roughness: 0.5,
+  metalness: 0.15,
+});
+
 export function buildGraveUnit(
   grave: GraveLot,
   isSelected: boolean,
@@ -29,8 +52,12 @@ export function buildGraveUnit(
     status.includes('an tang') ||
     status.includes('sử dụng') ||
     status.includes('su dung') ||
-    status.includes('occupied');
-  const isReserved = status.includes('đặt') || status.includes('dat') || status.includes('reserved');
+    status.includes('occupied') ||
+    Boolean(grave.nguoi_mat && !status.includes('đặt') && !status.includes('dat'));
+
+  const isReserved =
+    !isOccupied &&
+    (status.includes('đặt') || status.includes('dat') || status.includes('reserved'));
 
   const baseMat = isSelected
     ? shared.materials.selectedHighlight
@@ -42,13 +69,9 @@ export function buildGraveUnit(
 
   const slabMat = isSelected
     ? shared.materials.selectedHighlight
-    : isOccupied
-      ? shared.materials.occupiedSlab
-      : isReserved
-        ? shared.materials.reservedSlab
-        : shared.materials.emptySlab;
+    : shared.materials.occupiedSlab;
 
-  // 1. Luôn hiển thị Lô đất (bóng tiếp xúc + nền lô đất để người dùng click chọn)
+  // 1. Nền lô đất & bóng tiếp xúc (luôn có để người dùng click chọn)
   const shadow = new THREE.Mesh(shared.geometries.contactShadow, shared.materials.contactShadow);
   shadow.rotation.x = -Math.PI / 2;
   shadow.position.y = 0.015;
@@ -64,10 +87,9 @@ export function buildGraveUnit(
   const labelMat = new THREE.MeshBasicMaterial({ map: labelTex, transparent: true });
   const labelMesh = new THREE.Mesh(shared.geometries.labelPlane, labelMat);
 
-  let ring: THREE.Mesh | null = null;
-
-  // 2. Chỉ dựng phần Mộ 3D khi lô đất đang được chọn
-  if (isSelected) {
+  // 2. Phân loại hiển thị theo trạng thái dữ liệu
+  if (isOccupied) {
+    // ĐÃ AN TÁNG -> Dựng đầy đủ ngôi mộ 3D + bia mộ + bát hương
     const slab = new THREE.Mesh(shared.geometries.mainSlab, slabMat);
     slab.position.y = 0.4;
     slab.castShadow = true;
@@ -96,22 +118,59 @@ export function buildGraveUnit(
     bowl.castShadow = true;
     unit.add(bowl);
 
-    // Gắn nhãn mã lô lên mặt bia mộ
+    // Nhãn mã lô gắn đứng trên mặt bia mộ
     labelMesh.position.set(0, 1.18, -0.93);
     unit.add(labelMesh);
+  } else if (isReserved) {
+    // ĐÃ ĐẶT TRƯỚC -> Dựng 4 cọc mốc góc + biển cọc đánh dấu đặt trước
+    const cornerCoords: [number, number][] = [
+      [-0.58, -1.08],
+      [0.58, -1.08],
+      [-0.58, 1.08],
+      [0.58, 1.08],
+    ];
 
-    ring = new THREE.Mesh(shared.geometries.selectionRing, shared.materials.selectionRing);
-    ring.rotation.x = -Math.PI / 2;
-    ring.position.y = 0.06;
-    unit.add(ring);
+    cornerCoords.forEach(([cx, cz]) => {
+      const post = new THREE.Mesh(markerPostGeo, markerPostMat);
+      post.position.set(cx, 0.42, cz);
+      post.castShadow = true;
+
+      const cap = new THREE.Mesh(markerCapGeo, markerCapMat);
+      cap.position.set(cx, 0.76, cz);
+
+      unit.add(post, cap);
+    });
+
+    // Biển cắm đầu lô ghi mã lô đặt trước
+    const signPost = new THREE.Mesh(reserveSignPostGeo, markerPostMat);
+    signPost.position.set(0, 0.48, -0.85);
+    signPost.castShadow = true;
+
+    const signBoard = new THREE.Mesh(reserveSignBoardGeo, reserveBoardMat);
+    signBoard.position.set(0, 0.78, -0.85);
+    signBoard.castShadow = true;
+
+    labelMesh.position.set(0, 0.78, -0.81);
+    labelMesh.scale.set(0.85, 0.85, 1);
+
+    unit.add(signPost, signBoard, labelMesh);
   } else {
-    // Khi chưa chọn: đặt nhãn mã lô nằm phẳng trên mặt lô đất
+    // CÒN TRỐNG -> Chỉ để lô đất phẳng với nhãn mã lô nằm trên mặt nền
     labelMesh.rotation.x = -Math.PI / 2;
     labelMesh.position.set(0, 0.23, 0);
     unit.add(labelMesh);
   }
 
-  // 3. Huyệt ngầm (nếu người dùng bật chế độ Trục Z)
+  // 3. Vòng sáng nhận diện khi người dùng click chọn bất kỳ lô nào
+  let ring: THREE.Mesh | null = null;
+  if (isSelected) {
+    ring = new THREE.Mesh(shared.geometries.selectionRing, shared.materials.selectionRing);
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.06;
+    unit.add(ring);
+  }
+
+  // 4. Huyệt ngầm (nếu người dùng bật chế độ Trục Z)
   if (showSubsurface) {
     const vault = new THREE.Mesh(shared.geometries.subsurfaceVault, shared.materials.subsurfaceVault);
     vault.position.y = -0.72;

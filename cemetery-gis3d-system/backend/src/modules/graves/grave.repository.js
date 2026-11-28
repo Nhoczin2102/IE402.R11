@@ -386,26 +386,45 @@ const updateGraveStatus = async (maLoDat, dbTrangThai, client) => {
   return rows[0] || null;
 };
 
-// Không ép ::date cứng để tương thích cả cột VARCHAR lẫn DATE trên Supabase
+// Không dùng ON CONFLICT (ma_lo_dat) để tránh lỗi 42P10 khi DB thiếu UNIQUE constraint
 const upsertOccupant = async (
   { ma_nguoi_mat, ma_lo_dat, ho_ten, ngay_sinh, ngay_mat, ngay_an_tang, thong_tin_than_nhan },
   client
 ) => {
-  const sql = `
+  const updateSql = `
+    UPDATE nguoi_mat
+    SET
+      ho_ten = $1,
+      ngay_sinh = COALESCE($2, ngay_sinh),
+      ngay_mat = COALESCE($3, ngay_mat),
+      ngay_an_tang = COALESCE($4, ngay_an_tang),
+      thong_tin_than_nhan = COALESCE($5, thong_tin_than_nhan)
+    WHERE ma_lo_dat = $6
+    RETURNING *;
+  `;
+  const updated = await client.query(updateSql, [
+    ho_ten,
+    ngay_sinh || null,
+    ngay_mat || null,
+    ngay_an_tang || null,
+    thong_tin_than_nhan || null,
+    ma_lo_dat,
+  ]);
+
+  if (updated.rows.length > 0) {
+    return updated.rows[0];
+  }
+
+  const safeId = `${ma_nguoi_mat}-${Date.now().toString(36).toUpperCase()}`.slice(0, 30);
+  const insertSql = `
     INSERT INTO nguoi_mat (
       ma_nguoi_mat, ma_lo_dat, ho_ten, ngay_sinh, ngay_mat, ngay_an_tang, thong_tin_than_nhan
     )
     VALUES ($1, $2, $3, $4, $5, $6, $7)
-    ON CONFLICT (ma_lo_dat) DO UPDATE SET
-      ho_ten = EXCLUDED.ho_ten,
-      ngay_sinh = COALESCE(EXCLUDED.ngay_sinh, nguoi_mat.ngay_sinh),
-      ngay_mat = COALESCE(EXCLUDED.ngay_mat, nguoi_mat.ngay_mat),
-      ngay_an_tang = COALESCE(EXCLUDED.ngay_an_tang, nguoi_mat.ngay_an_tang),
-      thong_tin_than_nhan = COALESCE(EXCLUDED.thong_tin_than_nhan, nguoi_mat.thong_tin_than_nhan)
     RETURNING *;
   `;
-  const { rows } = await client.query(sql, [
-    ma_nguoi_mat,
+  const inserted = await client.query(insertSql, [
+    safeId,
     ma_lo_dat,
     ho_ten,
     ngay_sinh || null,
@@ -413,7 +432,7 @@ const upsertOccupant = async (
     ngay_an_tang || null,
     thong_tin_than_nhan || null,
   ]);
-  return rows[0];
+  return inserted.rows[0];
 };
 
 const deleteOccupantByGraveId = async (maLoDat, client) => {
