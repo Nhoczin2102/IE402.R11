@@ -80,22 +80,28 @@ const DEFAULT_SUDM_SURFACES = Object.freeze([
 
 // Mạng lưới nút giao thông chuẩn nội bộ (đồng bộ tọa độ không gian 3D)
 const DEFAULT_NETWORK_NODES = Object.freeze({
-  GATE: [0, 42],
-  PLAZA_SOUTH: [0, 20],
-  JUNCTION_B: [0, 5],
-  JUNCTION_AC: [0, -14],
-  WEST_A1: [-17, -14],
-  EAST_C1: [18, -10],
-  MONUMENT: [0, -25],
+  GATE: [0, 50],
+  HALL_MID: [0, 42],
+  GATE_2: [0, 22.5],
+  RING_SOUTH: [0, 7],
+  MONUMENT: [0, -21.5],
+  RING_WEST: [-25, -18],
+  RING_EAST: [25, -18],
+  RING_NORTH: [0, -43],
 });
 
 const DEFAULT_NETWORK_EDGES = Object.freeze([
-  ['GATE', 'PLAZA_SOUTH'],
-  ['PLAZA_SOUTH', 'JUNCTION_B'],
-  ['JUNCTION_B', 'JUNCTION_AC'],
-  ['JUNCTION_AC', 'WEST_A1'],
-  ['JUNCTION_AC', 'EAST_C1'],
-  ['JUNCTION_AC', 'MONUMENT'],
+  ['GATE', 'HALL_MID'],
+  ['HALL_MID', 'GATE_2'],
+  ['GATE_2', 'RING_SOUTH'],
+  ['RING_SOUTH', 'MONUMENT'],
+  ['RING_SOUTH', 'RING_WEST'],
+  ['RING_SOUTH', 'RING_EAST'],
+  ['RING_WEST', 'MONUMENT'],
+  ['RING_EAST', 'MONUMENT'],
+  ['RING_WEST', 'RING_NORTH'],
+  ['RING_EAST', 'RING_NORTH'],
+  ['MONUMENT', 'RING_NORTH'],
 ]);
 
 module.exports = {

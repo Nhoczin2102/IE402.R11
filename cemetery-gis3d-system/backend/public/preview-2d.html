@@ -1,0 +1,1335 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WebGIS 2D Master Plan — Quy hoạch Nghĩa trang Đồng tâm (D3.js Vector)</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+  <style>
+    html, body {
+      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      overscroll-behavior: none;
+    }
+    #map-svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+      touch-action: none;
+      background: radial-gradient(circle at 50% 42%, #0f1c2e 0%, #070d18 100%);
+    }
+    .custom-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
+    .custom-scroll::-webkit-scrollbar-track { background: #0f172a; }
+    .custom-scroll::-webkit-scrollbar-thumb { background: #334155; border-radius: 9999px; }
+    .label-halo {
+      paint-order: stroke;
+      stroke: #070d18;
+      stroke-width: 0.9px;
+      stroke-linejoin: round;
+    }
+    .grave-group { cursor: pointer; transition: opacity 0.15s ease; }
+    .grave-group:hover .grave-body { stroke: #ffffff; stroke-width: 0.32; }
+    .infra-item { cursor: pointer; }
+    .infra-item:hover { filter: brightness(1.18); }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 h-screen flex flex-col overflow-hidden select-none">
+
+  <!-- Header -->
+  <header class="bg-slate-900/95 border-b border-slate-800 px-3 sm:px-4 py-2.5 flex items-center justify-between gap-2 shrink-0">
+    <div class="flex items-center gap-2.5 min-w-0">
+      <div class="w-8 h-8 rounded-lg bg-emerald-500/15 border border-emerald-500/40 flex items-center justify-center shrink-0">
+        <svg class="w-4 h-4 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="9"></circle>
+          <circle cx="12" cy="12" r="4"></circle>
+          <line x1="12" y1="3" x2="12" y2="21"></line>
+          <line x1="3" y1="12" x2="21" y2="12"></line>
+        </svg>
+      </div>
+      <div class="min-w-0">
+        <h1 class="text-sm sm:text-base font-semibold text-white truncate">WebGIS 2D Master Plan — Nghĩa Trang Đồng Tâm</h1>
+        <p class="text-[11px] text-slate-400 truncate">D3.js Vector SVG • SRID 3405 • 140m × 140m</p>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
+      <span id="badge-audit" class="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+        <span id="badge-audit-text">Sẵn sàng</span>
+      </span>
+      <button id="btn-run-audit" type="button" class="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-indigo-600 hover:bg-indigo-500 text-white transition cursor-pointer">
+        Kiểm tra Topology
+      </button>
+      <button id="btn-sync-live" type="button" class="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-emerald-600 hover:bg-emerald-500 text-white transition cursor-pointer">Tải lại DB thật</button>
+      <button id="btn-export-geojson" type="button" class="hidden sm:inline-flex px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition cursor-pointer">
+        Xuất GeoJSON
+      </button>
+      <button id="btn-toggle-sidebar" type="button" class="lg:hidden px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition cursor-pointer">
+        Điều khiển
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Workspace -->
+  <div class="flex-1 flex min-h-0 relative overflow-hidden">
+    <!-- D3 Vector SVG Viewport -->
+    <main class="flex-1 relative min-w-0 overflow-hidden">
+      <svg id="map-svg" viewBox="-86 -76 172 172" preserveAspectRatio="xMidYMid meet">
+        <defs>
+          <filter id="soft-shadow" x="-20%" y="-20%" width="140%" height="140%">
+            <feDropShadow dx="0.4" dy="0.7" stdDeviation="0.8" flood-color="#020617" flood-opacity="0.65" />
+          </filter>
+          <filter id="glow-route" x="-30%" y="-30%" width="160%" height="160%">
+            <feGaussianBlur stdDeviation="0.9" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+          <radialGradient id="monument-grad" cx="40%" cy="35%" r="65%">
+            <stop offset="0%" stop-color="#fef08a" />
+            <stop offset="55%" stop-color="#eab308" />
+            <stop offset="100%" stop-color="#a16207" />
+          </radialGradient>
+          <radialGradient id="tree-big-grad" cx="35%" cy="30%" r="70%">
+            <stop offset="0%" stop-color="#4ade80" />
+            <stop offset="55%" stop-color="#16a34a" />
+            <stop offset="100%" stop-color="#14532d" />
+          </radialGradient>
+          <radialGradient id="tree-med-grad" cx="35%" cy="30%" r="70%">
+            <stop offset="0%" stop-color="#86efac" />
+            <stop offset="60%" stop-color="#22c55e" />
+            <stop offset="100%" stop-color="#166534" />
+          </radialGradient>
+          <linearGradient id="building-roof" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#6366f1" />
+            <stop offset="100%" stop-color="#3730a3" />
+          </linearGradient>
+          <linearGradient id="gate-roof" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stop-color="#fbbf24" />
+            <stop offset="100%" stop-color="#b45309" />
+          </linearGradient>
+          <linearGradient id="fence-wall" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stop-color="#f43f5e" />
+            <stop offset="50%" stop-color="#fb7185" />
+            <stop offset="100%" stop-color="#e11d48" />
+          </linearGradient>
+        </defs>
+        <g id="viewport-root">
+          <g id="layer-grid"></g>
+          <g id="layer-zones"></g>
+          <g id="layer-roads"></g>
+          <g id="layer-fences"></g>
+          <g id="layer-bushes"></g>
+          <g id="layer-graves"></g>
+          <g id="layer-buildings"></g>
+          <g id="layer-trees"></g>
+          <g id="layer-route"></g>
+          <g id="layer-labels"></g>
+        </g>
+      </svg>
+
+      <!-- Top-left KPI & Source pill -->
+      <div class="absolute top-3 left-3 flex flex-wrap items-center gap-1.5 pointer-events-none">
+        <div class="bg-slate-900/90 backdrop-blur border border-slate-700/80 rounded-lg px-2.5 py-1.5 text-xs flex items-center gap-2.5 shadow-lg">
+          <span class="text-slate-300"><strong id="kpi-graves" class="text-white">240</strong> mộ</span>
+          <span class="text-slate-600">|</span>
+          <span class="text-emerald-400"><strong id="kpi-empty">0</strong> trống</span>
+          <span class="text-amber-400"><strong id="kpi-reserved">0</strong> đặt trước</span>
+          <span class="text-sky-400"><strong id="kpi-buried">0</strong> đã an táng</span>
+        </div>
+        <div id="source-pill" class="bg-slate-900/90 backdrop-blur border border-slate-700/80 rounded-lg px-2.5 py-1.5 text-[11px] text-slate-300 shadow-lg">
+          Đang kết nối <strong class="text-amber-300">Live API (/api/*)</strong>...
+        </div>
+      </div>
+
+      <!-- Top-right Zoom Controls + Compass -->
+      <div class="absolute top-3 right-3 flex flex-col items-end gap-2">
+        <div class="bg-slate-900/90 backdrop-blur border border-slate-700/80 rounded-lg p-1 flex flex-col gap-1 shadow-lg">
+          <button id="btn-zoom-in" type="button" title="Phóng to" class="w-8 h-8 rounded hover:bg-slate-800 text-slate-200 font-bold text-base flex items-center justify-center cursor-pointer">+</button>
+          <button id="btn-zoom-out" type="button" title="Thu nhỏ" class="w-8 h-8 rounded hover:bg-slate-800 text-slate-200 font-bold text-base flex items-center justify-center cursor-pointer">−</button>
+          <button id="btn-zoom-reset" type="button" title="Vừa khung hình" class="w-8 h-8 rounded hover:bg-slate-800 text-slate-300 text-[10px] font-semibold flex items-center justify-center cursor-pointer">FIT</button>
+        </div>
+        <div class="bg-slate-900/90 backdrop-blur border border-slate-700/80 rounded-lg px-2 py-1.5 text-[10px] text-slate-300 flex flex-col items-center shadow-lg pointer-events-none">
+          <span class="font-bold text-rose-400 leading-none">B (Z−)</span>
+          <span class="text-slate-500 my-0.5">↑</span>
+          <span class="text-slate-400 leading-none">N (Z+)</span>
+        </div>
+      </div>
+
+      <!-- Bottom Legend & Coordinate HUD -->
+      <div class="absolute bottom-3 left-3 right-3 flex flex-wrap items-end justify-between gap-2 pointer-events-none">
+        <div class="bg-slate-900/90 backdrop-blur border border-slate-700/80 rounded-lg px-3 py-1.5 text-[11px] text-slate-300 flex flex-wrap items-center gap-x-3 gap-y-1 shadow-lg">
+          <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-sky-500"></span>Đã an táng</span>
+          <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-amber-400"></span>Đã đặt trước</span>
+          <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-emerald-400"></span>Trống</span>
+          <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-slate-400"></span>Đường đi</span>
+          <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-rose-500"></span>Hàng rào bo tròn</span>
+          <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-green-500"></span>Cây xanh</span>
+          <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-lime-400"></span>Bụi cây ngoài rào</span>
+        </div>
+
+        <div class="bg-slate-900/90 backdrop-blur border border-slate-700/80 rounded-lg px-3 py-1.5 text-[11px] font-mono text-slate-300 shadow-lg flex items-center gap-2.5">
+          <span id="hud-coords">X: 0.0m • Z: 0.0m</span>
+          <span class="text-slate-600">|</span>
+          <span id="hud-elev">Y: 0.00m</span>
+          <span class="text-slate-600">|</span>
+          <span id="hud-scale">100%</span>
+        </div>
+      </div>
+
+      <!-- Hover Tooltip -->
+      <div id="hover-tooltip" class="hidden fixed z-30 pointer-events-none bg-slate-900/95 border border-slate-600 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 shadow-xl max-w-[240px]"></div>
+    </main>
+
+    <!-- Right Control & Inspector Sidebar -->
+    <aside id="sidebar" class="hidden lg:flex flex-col w-80 xl:w-96 bg-slate-900 border-l border-slate-800 shrink-0 absolute lg:static inset-y-0 right-0 z-20 shadow-2xl lg:shadow-none">
+      <div class="grid grid-cols-3 border-b border-slate-800 bg-slate-900/80 shrink-0">
+        <button data-tab="layers" type="button" class="tab-btn py-2.5 text-xs font-semibold border-b-2 border-emerald-400 text-emerald-300 cursor-pointer">Lớp & Lọc</button>
+        <button data-tab="inspector" type="button" class="tab-btn py-2.5 text-xs font-semibold border-b-2 border-transparent text-slate-400 hover:text-slate-200 cursor-pointer">Chi tiết</button>
+        <button data-tab="qa" type="button" class="tab-btn py-2.5 text-xs font-semibold border-b-2 border-transparent text-slate-400 hover:text-slate-200 cursor-pointer">Kiểm thử QA</button>
+      </div>
+
+      <!-- Tab 1: Layers & Filters -->
+      <div id="panel-layers" class="flex-1 overflow-y-auto custom-scroll p-3.5 space-y-4">
+        <div>
+          <label for="search-input" class="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Tìm kiếm mộ / người mất</label>
+          <div class="relative">
+            <input id="search-input" type="text" placeholder="Nhập mã (vd: A-001, C-015) hoặc tên..." class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-500" />
+            <button id="btn-clear-search" type="button" class="hidden absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white text-xs px-1 cursor-pointer">✕</button>
+          </div>
+          <div id="search-results" class="mt-1.5 space-y-1 max-h-36 overflow-y-auto custom-scroll"></div>
+        </div>
+
+        <div>
+          <span class="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Phân khu quy hoạch</span>
+          <div class="grid grid-cols-4 gap-1.5">
+            <button data-zone="ALL" type="button" class="zone-btn py-1.5 rounded-md text-xs font-medium bg-emerald-600 text-white cursor-pointer">Tất cả</button>
+            <button data-zone="PK-A" type="button" class="zone-btn py-1.5 rounded-md text-xs font-medium bg-slate-800 text-slate-300 hover:bg-slate-700 cursor-pointer">PK-A</button>
+            <button data-zone="PK-B" type="button" class="zone-btn py-1.5 rounded-md text-xs font-medium bg-slate-800 text-slate-300 hover:bg-slate-700 cursor-pointer">PK-B</button>
+            <button data-zone="PK-C" type="button" class="zone-btn py-1.5 rounded-md text-xs font-medium bg-slate-800 text-slate-300 hover:bg-slate-700 cursor-pointer">PK-C</button>
+          </div>
+        </div>
+
+        <div>
+          <span class="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Trạng thái lô mộ</span>
+          <div class="grid grid-cols-2 gap-1.5">
+            <button data-status="ALL" type="button" class="status-btn py-1.5 rounded-md text-xs font-medium bg-emerald-600 text-white cursor-pointer">Tất cả</button>
+            <button data-status="Trống" type="button" class="status-btn py-1.5 rounded-md text-xs font-medium bg-slate-800 text-slate-300 hover:bg-slate-700 cursor-pointer">Trống</button>
+            <button data-status="Đã đặt trước" type="button" class="status-btn py-1.5 rounded-md text-xs font-medium bg-slate-800 text-slate-300 hover:bg-slate-700 cursor-pointer">Đã đặt trước</button>
+            <button data-status="Đã an táng" type="button" class="status-btn py-1.5 rounded-md text-xs font-medium bg-slate-800 text-slate-300 hover:bg-slate-700 cursor-pointer">Đã an táng</button>
+          </div>
+        </div>
+
+        <div>
+          <span class="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-2">Lớp bản đồ Vector GIS 2D</span>
+          <div class="space-y-1.5 text-xs">
+            <label class="flex items-center justify-between bg-slate-950/70 border border-slate-800 rounded-lg px-2.5 py-2 cursor-pointer hover:border-slate-700">
+              <span>Phân khu (3 cung 120°)</span>
+              <input type="checkbox" data-layer="zones" checked class="layer-toggle accent-emerald-500 w-4 h-4" />
+            </label>
+            <label class="flex items-center justify-between bg-slate-950/70 border border-slate-800 rounded-lg px-2.5 py-2 cursor-pointer hover:border-slate-700">
+              <span>240 Lô mộ (bia hướng tâm)</span>
+              <input type="checkbox" data-layer="graves" checked class="layer-toggle accent-emerald-500 w-4 h-4" />
+            </label>
+            <label class="flex items-center justify-between bg-slate-950/70 border border-slate-800 rounded-lg px-2.5 py-2 cursor-pointer hover:border-slate-700">
+              <span>10 Tuyến đường & Lối bãi xe</span>
+              <input type="checkbox" data-layer="roads" checked class="layer-toggle accent-emerald-500 w-4 h-4" />
+            </label>
+            <label class="flex items-center justify-between bg-slate-950/70 border border-slate-800 rounded-lg px-2.5 py-2 cursor-pointer hover:border-slate-700">
+              <span>Hàng rào vòng cung & viền ngoài</span>
+              <input type="checkbox" data-layer="fences" checked class="layer-toggle accent-emerald-500 w-4 h-4" />
+            </label>
+            <label class="flex items-center justify-between bg-slate-950/70 border border-slate-800 rounded-lg px-2.5 py-2 cursor-pointer hover:border-slate-700">
+              <span>Cổng, Tượng đài, 2 Nhà & 2 Bãi xe</span>
+              <input type="checkbox" data-layer="buildings" checked class="layer-toggle accent-emerald-500 w-4 h-4" />
+            </label>
+            <label class="flex items-center justify-between bg-slate-950/70 border border-slate-800 rounded-lg px-2.5 py-2 cursor-pointer hover:border-slate-700">
+              <span>Cây đại thụ (2) & Cây nội khu</span>
+              <input type="checkbox" data-layer="trees" checked class="layer-toggle accent-emerald-500 w-4 h-4" />
+            </label>
+            <label class="flex items-center justify-between bg-slate-950/70 border border-slate-800 rounded-lg px-2.5 py-2 cursor-pointer hover:border-slate-700">
+              <span>Hàng bụi cây liền sát tường</span>
+              <input type="checkbox" data-layer="bushes" checked class="layer-toggle accent-emerald-500 w-4 h-4" />
+            </label>
+            <label class="flex items-center justify-between bg-slate-950/70 border border-slate-800 rounded-lg px-2.5 py-2 cursor-pointer hover:border-slate-700">
+              <span>Nhãn công trình & phân khu</span>
+              <input type="checkbox" data-layer="labels" checked class="layer-toggle accent-emerald-500 w-4 h-4" />
+            </label>
+            <label class="flex items-center justify-between bg-slate-950/70 border border-slate-800 rounded-lg px-2.5 py-2 cursor-pointer hover:border-slate-700">
+              <span>Lưới tọa độ 10m & Ranh 140×140m</span>
+              <input type="checkbox" data-layer="grid" checked class="layer-toggle accent-emerald-500 w-4 h-4" />
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 2: Inspector -->
+      <div id="panel-inspector" class="hidden flex-1 overflow-y-auto custom-scroll p-3.5 space-y-3">
+        <div id="inspector-content" class="text-xs text-slate-300 space-y-3">
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-4 text-center">
+            <p class="text-slate-400">Nhấp vào bất kỳ <strong class="text-white">lô mộ</strong> hoặc <strong class="text-white">công trình</strong> nào trên bản đồ để xem tọa độ SRID 3405 và mô phỏng dẫn đường.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 3: QA & Routing -->
+      <div id="panel-qa" class="hidden flex-1 overflow-y-auto custom-scroll p-3.5 space-y-4">
+        <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3 space-y-2.5">
+          <div class="flex items-center justify-between">
+            <h3 class="text-xs font-semibold text-white">Kiểm tra Hình học & Topology</h3>
+            <button id="btn-audit-rerun" type="button" class="text-[11px] px-2 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-white cursor-pointer">Chạy lại</button>
+          </div>
+          <div id="audit-results" class="text-xs space-y-1.5 text-slate-300"></div>
+        </div>
+
+        <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3 space-y-2.5">
+          <h3 class="text-xs font-semibold text-white">Mô phỏng Dẫn đường 3D (Dijkstra)</h3>
+          <p class="text-[11px] text-slate-400">Tìm đường ngắn nhất bám 8 tuyến giao thông từ <strong class="text-slate-200">Cổng 1 (0, 50)</strong> đến lô mộ.</p>
+          <div class="flex gap-1.5">
+            <select id="route-target-select" class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-emerald-500"></select>
+            <button id="btn-route-go" type="button" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer">Tìm đường</button>
+          </div>
+          <button id="btn-route-clear" type="button" class="w-full py-1.5 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer">Xóa tuyến dẫn đường</button>
+          <div id="route-info" class="text-xs text-slate-300 space-y-1"></div>
+        </div>
+
+        <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3 space-y-2">
+          <h3 class="text-xs font-semibold text-white">Thống kê Sức chứa theo Phân khu</h3>
+          <div id="zone-capacity-list" class="space-y-2 text-xs"></div>
+        </div>
+      </div>
+    </aside>
+  </div>
+  
+  <div id="toast" class="hidden fixed bottom-14 right-4 z-50 bg-slate-800 border border-slate-600 text-slate-100 text-xs px-3.5 py-2 rounded-lg shadow-xl"></div>
+
+  <script>
+    const DEFAULT_DATASET = {"zones":[{"id":"PK-A","name":"Khu A (Cung Tây - Nam)","type":"Cát táng đồng tâm","area":1936.0,"maxDensity":60.0,"z":1.3,"poly":[[0.0,-21.5],[0.0,21.5],[-3.75,21.34],[-7.47,20.85],[-11.13,20.04],[-14.71,18.91],[-18.17,17.47],[-21.5,15.74],[-24.66,13.72],[-27.64,11.44],[-30.41,8.91],[-32.94,6.14],[-35.22,3.16],[-37.24,0.0],[-38.97,-3.33],[-40.41,-6.79],[-41.53,-10.37],[-42.35,-14.03],[-42.84,-17.75],[-43.0,-21.5],[-42.84,-25.25],[-42.35,-28.97],[-41.53,-32.63],[-40.41,-36.21],[-38.97,-39.67],[-37.24,-43.0],[0.0,-21.5]]},{"id":"PK-B","name":"Khu B (Cung Bắc - Trung Tâm)","type":"Hung táng & Gia tộc","area":1936.0,"maxDensity":55.0,"z":1.2,"poly":[[0.0,-21.5],[-37.24,-43.0],[-35.22,-46.16],[-32.94,-49.14],[-30.41,-51.91],[-27.64,-54.44],[-24.66,-56.72],[-21.5,-58.74],[-18.17,-60.47],[-14.71,-61.91],[-11.13,-63.03],[-7.47,-63.85],[-3.75,-64.34],[-0.0,-64.5],[3.75,-64.34],[7.47,-63.85],[11.13,-63.03],[14.71,-61.91],[18.17,-60.47],[21.5,-58.74],[24.66,-56.72],[27.64,-54.44],[30.41,-51.91],[32.94,-49.14],[35.22,-46.16],[37.24,-43.0],[0.0,-21.5]]},{"id":"PK-C","name":"Khu C (Cung Đông - Nam)","type":"Mộ có mái che đồng tâm","area":1936.0,"maxDensity":60.0,"z":1.15,"poly":[[0.0,-21.5],[37.24,-43.0],[38.97,-39.67],[40.41,-36.21],[41.53,-32.63],[42.35,-28.97],[42.84,-25.25],[43.0,-21.5],[42.84,-17.75],[42.35,-14.03],[41.53,-10.37],[40.41,-6.79],[38.97,-3.33],[37.24,0.0],[35.22,3.16],[32.94,6.14],[30.41,8.91],[27.64,11.44],[24.66,13.72],[21.5,15.74],[18.17,17.47],[14.71,18.91],[11.13,20.04],[7.47,20.85],[3.75,21.34],[0.0,21.5],[0.0,-21.5]]}],"infra":[{"id":"HT-GATE-1","zone":null,"name":"Cổng 1 - Cổng Chính Ngoài","type":"CONG","area":46.8,"height":7.5,"buffer":4.0,"poly":[[-6.5,48.2],[6.5,48.2],[6.5,51.8],[-6.5,51.8],[-6.5,48.2]]},{"id":"HT-GATE-2","zone":null,"name":"Cổng 2 - Cổng Nội Khu Vòng Tròn","type":"CONG","area":29.1,"height":6.0,"buffer":3.0,"poly":[[-5.2,21.1],[5.2,21.1],[5.2,23.9],[-5.2,23.9],[-5.2,21.1]]},{"id":"HT-MON-01","zone":null,"name":"Tượng Đài Trung Tâm Vòng Tròn","type":"DAI_TUONG_NIEM","area":176.7,"height":15.0,"buffer":3.0,"poly":[[7.5,-21.5],[7.36,-20.04],[6.93,-18.63],[6.24,-17.33],[5.3,-16.2],[4.17,-15.26],[2.87,-14.57],[1.46,-14.14],[0.0,-14.0],[-1.46,-14.14],[-2.87,-14.57],[-4.17,-15.26],[-5.3,-16.2],[-6.24,-17.33],[-6.93,-18.63],[-7.36,-20.04],[-7.5,-21.5],[-7.36,-22.96],[-6.93,-24.37],[-6.24,-25.67],[-5.3,-26.8],[-4.17,-27.74],[-2.87,-28.43],[-1.46,-28.86],[-0.0,-29.0],[1.46,-28.86],[2.87,-28.43],[4.17,-27.74],[5.3,-26.8],[6.24,-25.67],[6.93,-24.37],[7.36,-22.96],[7.5,-21.5]]},{"id":"HT-BLD-1","zone":null,"name":"Nhà Tang Lễ & Hành Chính (Khối Bắc)","type":"NHA_TANG_LE","area":117.0,"height":7.5,"buffer":2.5,"poly":[[7.5,25.0],[20.5,25.0],[20.5,34.0],[7.5,34.0],[7.5,25.0]]},{"id":"HT-BLD-2","zone":null,"name":"Nhà Lưu Tro Cốt & Đón Tiếp (Khối Nam)","type":"NHA_TANG_LE","area":117.0,"height":7.5,"buffer":2.5,"poly":[[7.5,38.4],[20.5,38.4],[20.5,47.4],[7.5,47.4],[7.5,38.4]]},{"id":"HT-PARK-STAFF","zone":null,"name":"Bãi Giữ Xe Nhân Viên (Phía Sau 2 Tòa Nhà)","type":"NHA_TANG_LE","area":430.0,"height":0.25,"buffer":1.0,"poly":[[23.2,17.99],[27.5,15.12],[32.0,11.27],[36.0,6.81],[39.0,2.51],[39.0,50.5],[33.5,52.5],[31.5,57.47],[23.2,53.93],[23.2,17.99]]},{"id":"HT-PARK-GUEST","zone":null,"name":"Bãi Giữ Xe Khách Tham Quan (Cánh Trái)","type":"NHA_TANG_LE","area":920.0,"height":0.25,"buffer":1.0,"poly":[[-7.5,24.8],[-13.0,22.42],[-19.5,19.94],[-26.0,16.2],[-32.5,10.77],[-39.0,2.51],[-39.0,50.5],[-33.5,52.5],[-31.0,57.25],[-18.0,51.71],[-7.5,47.23],[-7.5,24.8]]},{"id":"HT-BIGTREE-SW","zone":null,"name":"Cây Cổ Thụ Đại Thụ Góc Nhọn Tây-Nam","type":"CAY_XANH","area":50.3,"height":14.0,"buffer":2.0,"poly":[[-34.8,57.2],[-34.94,58.23],[-35.34,59.2],[-35.97,60.03],[-36.8,60.66],[-37.77,61.06],[-38.8,61.2],[-39.84,61.06],[-40.8,60.66],[-41.63,60.03],[-42.26,59.2],[-42.66,58.23],[-42.8,57.2],[-42.66,56.16],[-42.26,55.2],[-41.63,54.37],[-40.8,53.74],[-39.84,53.34],[-38.8,53.2],[-37.77,53.34],[-36.8,53.74],[-35.97,54.37],[-35.34,55.2],[-34.94,56.16],[-34.8,57.2]]},{"id":"HT-BIGTREE-SE","zone":null,"name":"Cây Cổ Thụ Đại Thụ Góc Nhọn Đông-Nam","type":"CAY_XANH","area":50.3,"height":14.0,"buffer":2.0,"poly":[[42.8,57.2],[42.66,58.23],[42.26,59.2],[41.63,60.03],[40.8,60.66],[39.84,61.06],[38.8,61.2],[37.77,61.06],[36.8,60.66],[35.97,60.03],[35.34,59.2],[34.94,58.23],[34.8,57.2],[34.94,56.16],[35.34,55.2],[35.97,54.37],[36.8,53.74],[37.77,53.34],[38.8,53.2],[39.84,53.34],[40.8,53.74],[41.63,54.37],[42.26,55.2],[42.66,56.16],[42.8,57.2]]},{"id":"HT-FENCE-ARC-N","zone":null,"name":"Hàng Rào Vòng Cung Bắc (Bo tròn)","type":"CONG","area":138.2,"height":2.4,"buffer":0.5,"poly":[[-43.55,-21.48],[-43.44,-24.61],[-43.11,-27.7],[-42.55,-30.76],[-41.79,-33.77],[-40.8,-36.72],[-39.61,-39.59],[-38.22,-42.37],[-36.64,-45.05],[-34.86,-47.6],[-32.91,-50.02],[-30.8,-52.3],[-28.52,-54.41],[-26.1,-56.36],[-23.55,-58.14],[-20.87,-59.72],[-18.09,-61.11],[-15.22,-62.3],[-12.27,-63.29],[-9.26,-64.06],[-6.2,-64.61],[-3.11,-64.94],[-0.0,-65.05],[3.11,-64.94],[6.2,-64.61],[9.26,-64.06],[12.27,-63.29],[15.22,-62.3],[18.09,-61.11],[20.87,-59.72],[23.55,-58.14],[26.1,-56.36],[28.52,-54.41],[30.8,-52.3],[32.91,-50.02],[34.86,-47.6],[36.64,-45.05],[38.22,-42.37],[39.61,-39.59],[40.8,-36.72],[41.79,-33.77],[42.55,-30.76],[43.11,-27.7],[43.44,-24.61],[43.55,-21.48],[44.45,-21.52],[44.34,-24.67],[44.0,-27.83],[43.43,-30.95],[42.65,-34.02],[41.65,-37.03],[40.43,-39.97],[39.01,-42.8],[37.39,-45.53],[35.58,-48.14],[33.59,-50.61],[31.43,-52.93],[29.11,-55.09],[26.64,-57.08],[24.03,-58.89],[21.3,-60.51],[18.46,-61.93],[15.53,-63.15],[12.52,-64.15],[9.45,-64.93],[6.33,-65.5],[3.17,-65.84],[-0.0,-65.95],[-3.17,-65.84],[-6.33,-65.5],[-9.45,-64.93],[-12.52,-64.15],[-15.53,-63.15],[-18.46,-61.93],[-21.3,-60.51],[-24.03,-58.89],[-26.64,-57.08],[-29.11,-55.09],[-31.43,-52.93],[-33.59,-50.61],[-35.58,-48.14],[-37.39,-45.53],[-39.01,-42.8],[-40.43,-39.97],[-41.65,-37.03],[-42.65,-34.02],[-43.43,-30.95],[-44.0,-27.83],[-44.34,-24.67],[-44.45,-21.52],[-43.55,-21.48]]},{"id":"HT-FENCE-ARC-SW","zone":null,"name":"Hàng Rào Vòng Cung Dưới Tây-Nam (Bọc tới Cổng 2)","type":"CONG","area":63.3,"height":2.4,"buffer":0.5,"poly":[[-5.67,21.68],[-8.5,21.21],[-11.27,20.57],[-14.0,19.74],[-16.67,18.73],[-19.26,17.56],[-21.77,16.21],[-24.2,14.71],[-26.51,13.05],[-28.71,11.24],[-30.8,9.29],[-32.74,7.21],[-34.55,5.01],[-36.21,2.69],[-37.72,0.28],[-39.06,-2.24],[-40.23,-4.83],[-41.24,-7.5],[-42.07,-10.23],[-42.71,-13.0],[-43.18,-15.82],[-43.46,-18.65],[-43.55,-21.52],[-44.45,-21.48],[-44.35,-18.59],[-44.07,-15.7],[-43.6,-12.83],[-42.94,-9.99],[-42.09,-7.21],[-41.07,-4.49],[-39.87,-1.84],[-38.49,0.72],[-36.96,3.19],[-35.27,5.56],[-33.42,7.81],[-31.43,9.93],[-29.31,11.92],[-27.06,13.77],[-24.7,15.46],[-22.23,17.0],[-19.66,18.37],[-17.01,19.57],[-14.29,20.59],[-11.51,21.43],[-8.67,22.1],[-5.82,22.57],[-5.67,21.68]]},{"id":"HT-FENCE-ARC-SE","zone":null,"name":"Hàng Rào Vòng Cung Dưới Đông-Nam (Bọc tới Cổng 2)","type":"CONG","area":63.3,"height":2.4,"buffer":0.5,"poly":[[43.55,-21.52],[43.46,-18.65],[43.18,-15.82],[42.71,-13.0],[42.07,-10.23],[41.24,-7.5],[40.23,-4.83],[39.06,-2.24],[37.72,0.28],[36.21,2.69],[34.55,5.01],[32.74,7.21],[30.8,9.29],[28.71,11.24],[26.51,13.05],[24.2,14.71],[21.77,16.21],[19.26,17.56],[16.67,18.73],[14.0,19.74],[11.27,20.57],[8.5,21.21],[5.67,21.68],[5.82,22.57],[8.67,22.1],[11.51,21.43],[14.29,20.59],[17.01,19.57],[19.66,18.37],[22.23,17.0],[24.7,15.46],[27.06,13.77],[29.31,11.92],[31.43,9.93],[33.42,7.81],[35.27,5.56],[36.96,3.19],[38.49,0.72],[39.87,-1.84],[41.07,-4.49],[42.09,-7.21],[42.94,-9.99],[43.6,-12.83],[44.07,-15.7],[44.35,-18.59],[44.45,-21.48],[43.55,-21.52]]},{"id":"HT-FENCE-OUTER-W","zone":null,"name":"Hàng Rào Viền Ngoài Tây & Cạnh Xéo Vào Cổng 1","type":"CONG","area":128.0,"height":2.4,"buffer":0.5,"poly":[[-44.45,-21.5],[-44.25,66.38],[-6.32,50.41],[-6.68,49.59],[-43.75,65.62],[-43.55,-21.5],[-44.45,-21.5]]},{"id":"HT-FENCE-OUTER-E","zone":null,"name":"Hàng Rào Viền Ngoài Đông & Cạnh Xéo Vào Cổng 1","type":"CONG","area":128.0,"height":2.4,"buffer":0.5,"poly":[[43.55,-21.5],[43.75,65.62],[6.68,49.59],[6.32,50.41],[44.25,66.38],[44.45,-21.5],[43.55,-21.5]]},{"id":"HT-BUSH-001","zone":null,"name":"Hàng Bụi Cây Sát Tường (Tây)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-46.95,-21.5],[-44.55,-21.5],[-44.55,-19.1],[-46.95,-19.1],[-46.95,-21.5]]},{"id":"HT-BUSH-002","zone":null,"name":"Hàng Bụi Cây Sát Tường (Tây)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-46.95,-19.1],[-44.55,-19.1],[-44.55,-16.7],[-46.95,-16.7],[-46.95,-19.1]]},{"id":"HT-BUSH-003","zone":null,"name":"Hàng Bụi Cây Sát Tường (Tây)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-46.95,-16.7],[-44.55,-16.7],[-44.55,-14.3],[-46.95,-14.3],[-46.95,-16.7]]},{"id":"HT-BUSH-004","zone":null,"name":"Hàng Bụi Cây Sát Tường (Tây)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-46.95,-14.3],[-44.55,-14.3],[-44.55,-11.9],[-46.95,-11.9],[-46.95,-14.3]]},{"id":"HT-BUSH-005","zone":null,"name":"Hàng Bụi Cây Sát Tường (Tây)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-46.95,-11.9],[-44.55,-11.9],[-44.55,-9.5],[-46.95,-9.5],[-46.95,-11.9]]},{"id":"HT-BUSH-006","zone":null,"name":"Hàng Bụi Cây Sát Tường (Tây)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-46.95,-9.5],[-44.55,-9.5],[-44.55,-7.1],[-46.95,-7.1],[-46.95,-9.5]]},{"id":"HT-BUSH-007","zone":null,"name":"Hàng Bụi Cây Sát Tường (Tây)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-46.95,-7.1],[-44.55,-7.1],[-44.55,-4.7],[-46.95,-4.7],[-46.95,-7.1]]},{"id":"HT-BUSH-008","zone":null,"name":"Hàng Bụi Cây Sát Tường (Tây)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-46.95,-4.7],[-44.55,-4.7],[-44.55,-2.3],[-46.95,-2.3],[-46.95,-4.7]]},{"id":"HT-BUSH-009","zone":null,"name":"Hàng Bụi Cây Sát Tường (Tây)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-46.95,-2.3],[-44.55,-2.3],[-44.55,0.1],[-46.95,0.1],[-46.95,-2.3]]},{"id":"HT-BUSH-010","zone":null,"name":"Hàng Bụi Cây Sát Tường (Tây)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-46.95,0.1],[-44.55,0.1],[-44.55,2.5],[-46.95,2.5],[-46.95,0.1]]},{"id":"HT-BUSH-011","zone":null,"name":"Hàng Bụi Cây Sát Tường (Tây)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-46.95,2.5],[-44.55,2.5],[-44.55,4.9],[-46.95,4.9],[-46.95,2.5]]},{"id":"HT-BUSH-012","zone":null,"name":"Hàng Bụi Cây Sát Tường (Tây)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-46.95,4.9],[-44.55,4.9],[-44.55,7.3],[-46.95,7.3],[-46.95,4.9]]},{"id":"HT-BUSH-013","zone":null,"name":"Hàng Bụi Cây Sát Tường (Tây)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-46.95,7.3],[-44.55,7.3],[-44.55,9.7],[-46.95,9.7],[-46.95,7.3]]},{"id":"HT-BUSH-014","zone":null,"name":"Hàng Bụi Cây Sát Tường (Tây)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-46.95,9.7],[-44.55,9.7],[-44.55,12.1],[-46.95,12.1],[-46.95,9.7]]},{"id":"HT-BUSH-015","zone":null,"name":"Hàng Bụi Cây Sát Tường (Tây)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-46.95,12.1],[-44.55,12.1],[-44.55,14.5],[-46.95,14.5],[-46.95,12.1]]},{"id":"HT-BUSH-016","zone":null,"name":"Hàng Bụi Cây Sát Tường (Tây)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-46.95,14.5],[-44.55,14.5],[-44.55,16.9],[-46.95,16.9],[-46.95,14.5]]},{"id":"HT-BUSH-017","zone":null,"name":"Hàng Bụi Cây Sát Tường (Tây)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-46.95,16.9],[-44.55,16.9],[-44.55,19.3],[-46.95,19.3],[-46.95,16.9]]},{"id":"HT-BUSH-018","zone":null,"name":"Hàng Bụi Cây Sát Tường (Tây)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-46.95,19.3],[-44.55,19.3],[-44.55,21.7],[-46.95,21.7],[-46.95,19.3]]},{"id":"HT-BUSH-019","zone":null,"name":"Hàng Bụi Cây Sát Tường (Tây)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-46.95,21.7],[-44.55,21.7],[-44.55,24.1],[-46.95,24.1],[-46.95,21.7]]},{"id":"HT-BUSH-020","zone":null,"name":"Hàng Bụi Cây Sát Tường (Tây)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-46.95,24.1],[-44.55,24.1],[-44.55,26.5],[-46.95,26.5],[-46.95,24.1]]},{"id":"HT-BUSH-021","zone":null,"name":"Hàng Bụi Cây Sát Tường (Tây)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-46.95,26.5],[-44.55,26.5],[-44.55,28.9],[-46.95,28.9],[-46.95,26.5]]},{"id":"HT-BUSH-022","zone":null,"name":"Hàng Bụi Cây Sát Tường (Tây)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-46.95,28.9],[-44.55,28.9],[-44.55,31.3],[-46.95,31.3],[-46.95,28.9]]},{"id":"HT-BUSH-023","zone":null,"name":"Hàng Bụi Cây Sát Tường (Tây)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-46.95,31.3],[-44.55,31.3],[-44.55,33.7],[-46.95,33.7],[-46.95,31.3]]},{"id":"HT-BUSH-024","zone":null,"name":"Hàng Bụi Cây Sát Tường (Tây)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-46.95,33.7],[-44.55,33.7],[-44.55,36.1],[-46.95,36.1],[-46.95,33.7]]},{"id":"HT-BUSH-025","zone":null,"name":"Hàng Bụi Cây Sát Tường (Tây)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-46.95,36.1],[-44.55,36.1],[-44.55,38.5],[-46.95,38.5],[-46.95,36.1]]},{"id":"HT-BUSH-026","zone":null,"name":"Hàng Bụi Cây Sát Tường (Tây)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-46.95,38.5],[-44.55,38.5],[-44.55,40.9],[-46.95,40.9],[-46.95,38.5]]},{"id":"HT-BUSH-027","zone":null,"name":"Hàng Bụi Cây Sát Tường (Tây)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-46.95,40.9],[-44.55,40.9],[-44.55,43.3],[-46.95,43.3],[-46.95,40.9]]},{"id":"HT-BUSH-028","zone":null,"name":"Hàng Bụi Cây Sát Tường (Tây)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-46.95,43.3],[-44.55,43.3],[-44.55,45.7],[-46.95,45.7],[-46.95,43.3]]},{"id":"HT-BUSH-029","zone":null,"name":"Hàng Bụi Cây Sát Tường (Tây)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-46.95,45.7],[-44.55,45.7],[-44.55,48.1],[-46.95,48.1],[-46.95,45.7]]},{"id":"HT-BUSH-030","zone":null,"name":"Hàng Bụi Cây Sát Tường (Tây)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-46.95,48.1],[-44.55,48.1],[-44.55,50.5],[-46.95,50.5],[-46.95,48.1]]},{"id":"HT-BUSH-031","zone":null,"name":"Hàng Bụi Cây Sát Tường (Tây)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-46.95,50.5],[-44.55,50.5],[-44.55,52.9],[-46.95,52.9],[-46.95,50.5]]},{"id":"HT-BUSH-032","zone":null,"name":"Hàng Bụi Cây Sát Tường (Tây)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-46.95,52.9],[-44.55,52.9],[-44.55,55.3],[-46.95,55.3],[-46.95,52.9]]},{"id":"HT-BUSH-033","zone":null,"name":"Hàng Bụi Cây Sát Tường (Tây)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-46.95,55.3],[-44.55,55.3],[-44.55,57.7],[-46.95,57.7],[-46.95,55.3]]},{"id":"HT-BUSH-034","zone":null,"name":"Hàng Bụi Cây Sát Tường (Tây)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-46.95,57.7],[-44.55,57.7],[-44.55,60.1],[-46.95,60.1],[-46.95,57.7]]},{"id":"HT-BUSH-035","zone":null,"name":"Hàng Bụi Cây Sát Tường (Tây)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-46.95,60.1],[-44.55,60.1],[-44.55,62.5],[-46.95,62.5],[-46.95,60.1]]},{"id":"HT-BUSH-036","zone":null,"name":"Hàng Bụi Cây Sát Tường (Tây)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-46.95,62.5],[-44.55,62.5],[-44.55,64.9],[-46.95,64.9],[-46.95,62.5]]},{"id":"HT-BUSH-037","zone":null,"name":"Hàng Bụi Cây Sát Tường (Đông)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[44.55,-21.5],[46.95,-21.5],[46.95,-19.1],[44.55,-19.1],[44.55,-21.5]]},{"id":"HT-BUSH-038","zone":null,"name":"Hàng Bụi Cây Sát Tường (Đông)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[44.55,-19.1],[46.95,-19.1],[46.95,-16.7],[44.55,-16.7],[44.55,-19.1]]},{"id":"HT-BUSH-039","zone":null,"name":"Hàng Bụi Cây Sát Tường (Đông)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[44.55,-16.7],[46.95,-16.7],[46.95,-14.3],[44.55,-14.3],[44.55,-16.7]]},{"id":"HT-BUSH-040","zone":null,"name":"Hàng Bụi Cây Sát Tường (Đông)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[44.55,-14.3],[46.95,-14.3],[46.95,-11.9],[44.55,-11.9],[44.55,-14.3]]},{"id":"HT-BUSH-041","zone":null,"name":"Hàng Bụi Cây Sát Tường (Đông)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[44.55,-11.9],[46.95,-11.9],[46.95,-9.5],[44.55,-9.5],[44.55,-11.9]]},{"id":"HT-BUSH-042","zone":null,"name":"Hàng Bụi Cây Sát Tường (Đông)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[44.55,-9.5],[46.95,-9.5],[46.95,-7.1],[44.55,-7.1],[44.55,-9.5]]},{"id":"HT-BUSH-043","zone":null,"name":"Hàng Bụi Cây Sát Tường (Đông)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[44.55,-7.1],[46.95,-7.1],[46.95,-4.7],[44.55,-4.7],[44.55,-7.1]]},{"id":"HT-BUSH-044","zone":null,"name":"Hàng Bụi Cây Sát Tường (Đông)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[44.55,-4.7],[46.95,-4.7],[46.95,-2.3],[44.55,-2.3],[44.55,-4.7]]},{"id":"HT-BUSH-045","zone":null,"name":"Hàng Bụi Cây Sát Tường (Đông)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[44.55,-2.3],[46.95,-2.3],[46.95,0.1],[44.55,0.1],[44.55,-2.3]]},{"id":"HT-BUSH-046","zone":null,"name":"Hàng Bụi Cây Sát Tường (Đông)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[44.55,0.1],[46.95,0.1],[46.95,2.5],[44.55,2.5],[44.55,0.1]]},{"id":"HT-BUSH-047","zone":null,"name":"Hàng Bụi Cây Sát Tường (Đông)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[44.55,2.5],[46.95,2.5],[46.95,4.9],[44.55,4.9],[44.55,2.5]]},{"id":"HT-BUSH-048","zone":null,"name":"Hàng Bụi Cây Sát Tường (Đông)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[44.55,4.9],[46.95,4.9],[46.95,7.3],[44.55,7.3],[44.55,4.9]]},{"id":"HT-BUSH-049","zone":null,"name":"Hàng Bụi Cây Sát Tường (Đông)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[44.55,7.3],[46.95,7.3],[46.95,9.7],[44.55,9.7],[44.55,7.3]]},{"id":"HT-BUSH-050","zone":null,"name":"Hàng Bụi Cây Sát Tường (Đông)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[44.55,9.7],[46.95,9.7],[46.95,12.1],[44.55,12.1],[44.55,9.7]]},{"id":"HT-BUSH-051","zone":null,"name":"Hàng Bụi Cây Sát Tường (Đông)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[44.55,12.1],[46.95,12.1],[46.95,14.5],[44.55,14.5],[44.55,12.1]]},{"id":"HT-BUSH-052","zone":null,"name":"Hàng Bụi Cây Sát Tường (Đông)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[44.55,14.5],[46.95,14.5],[46.95,16.9],[44.55,16.9],[44.55,14.5]]},{"id":"HT-BUSH-053","zone":null,"name":"Hàng Bụi Cây Sát Tường (Đông)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[44.55,16.9],[46.95,16.9],[46.95,19.3],[44.55,19.3],[44.55,16.9]]},{"id":"HT-BUSH-054","zone":null,"name":"Hàng Bụi Cây Sát Tường (Đông)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[44.55,19.3],[46.95,19.3],[46.95,21.7],[44.55,21.7],[44.55,19.3]]},{"id":"HT-BUSH-055","zone":null,"name":"Hàng Bụi Cây Sát Tường (Đông)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[44.55,21.7],[46.95,21.7],[46.95,24.1],[44.55,24.1],[44.55,21.7]]},{"id":"HT-BUSH-056","zone":null,"name":"Hàng Bụi Cây Sát Tường (Đông)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[44.55,24.1],[46.95,24.1],[46.95,26.5],[44.55,26.5],[44.55,24.1]]},{"id":"HT-BUSH-057","zone":null,"name":"Hàng Bụi Cây Sát Tường (Đông)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[44.55,26.5],[46.95,26.5],[46.95,28.9],[44.55,28.9],[44.55,26.5]]},{"id":"HT-BUSH-058","zone":null,"name":"Hàng Bụi Cây Sát Tường (Đông)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[44.55,28.9],[46.95,28.9],[46.95,31.3],[44.55,31.3],[44.55,28.9]]},{"id":"HT-BUSH-059","zone":null,"name":"Hàng Bụi Cây Sát Tường (Đông)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[44.55,31.3],[46.95,31.3],[46.95,33.7],[44.55,33.7],[44.55,31.3]]},{"id":"HT-BUSH-060","zone":null,"name":"Hàng Bụi Cây Sát Tường (Đông)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[44.55,33.7],[46.95,33.7],[46.95,36.1],[44.55,36.1],[44.55,33.7]]},{"id":"HT-BUSH-061","zone":null,"name":"Hàng Bụi Cây Sát Tường (Đông)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[44.55,36.1],[46.95,36.1],[46.95,38.5],[44.55,38.5],[44.55,36.1]]},{"id":"HT-BUSH-062","zone":null,"name":"Hàng Bụi Cây Sát Tường (Đông)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[44.55,38.5],[46.95,38.5],[46.95,40.9],[44.55,40.9],[44.55,38.5]]},{"id":"HT-BUSH-063","zone":null,"name":"Hàng Bụi Cây Sát Tường (Đông)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[44.55,40.9],[46.95,40.9],[46.95,43.3],[44.55,43.3],[44.55,40.9]]},{"id":"HT-BUSH-064","zone":null,"name":"Hàng Bụi Cây Sát Tường (Đông)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[44.55,43.3],[46.95,43.3],[46.95,45.7],[44.55,45.7],[44.55,43.3]]},{"id":"HT-BUSH-065","zone":null,"name":"Hàng Bụi Cây Sát Tường (Đông)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[44.55,45.7],[46.95,45.7],[46.95,48.1],[44.55,48.1],[44.55,45.7]]},{"id":"HT-BUSH-066","zone":null,"name":"Hàng Bụi Cây Sát Tường (Đông)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[44.55,48.1],[46.95,48.1],[46.95,50.5],[44.55,50.5],[44.55,48.1]]},{"id":"HT-BUSH-067","zone":null,"name":"Hàng Bụi Cây Sát Tường (Đông)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[44.55,50.5],[46.95,50.5],[46.95,52.9],[44.55,52.9],[44.55,50.5]]},{"id":"HT-BUSH-068","zone":null,"name":"Hàng Bụi Cây Sát Tường (Đông)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[44.55,52.9],[46.95,52.9],[46.95,55.3],[44.55,55.3],[44.55,52.9]]},{"id":"HT-BUSH-069","zone":null,"name":"Hàng Bụi Cây Sát Tường (Đông)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[44.55,55.3],[46.95,55.3],[46.95,57.7],[44.55,57.7],[44.55,55.3]]},{"id":"HT-BUSH-070","zone":null,"name":"Hàng Bụi Cây Sát Tường (Đông)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[44.55,57.7],[46.95,57.7],[46.95,60.1],[44.55,60.1],[44.55,57.7]]},{"id":"HT-BUSH-071","zone":null,"name":"Hàng Bụi Cây Sát Tường (Đông)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[44.55,60.1],[46.95,60.1],[46.95,62.5],[44.55,62.5],[44.55,60.1]]},{"id":"HT-BUSH-072","zone":null,"name":"Hàng Bụi Cây Sát Tường (Đông)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[44.55,62.5],[46.95,62.5],[46.95,64.9],[44.55,64.9],[44.55,62.5]]},{"id":"HT-BUSH-073","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-44.55,-20.3],[-46.95,-20.3],[-46.95,-22.7],[-44.55,-22.7],[-44.55,-20.3]]},{"id":"HT-BUSH-074","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-44.55,-22.63],[-46.95,-22.76],[-46.82,-25.16],[-44.43,-25.03],[-44.55,-22.63]]},{"id":"HT-BUSH-075","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-44.43,-24.96],[-46.82,-25.21],[-46.57,-27.6],[-44.18,-27.35],[-44.43,-24.96]]},{"id":"HT-BUSH-076","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-44.19,-27.28],[-46.56,-27.66],[-46.18,-30.03],[-43.81,-29.65],[-44.19,-27.28]]},{"id":"HT-BUSH-077","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-43.83,-29.59],[-46.17,-30.09],[-45.67,-32.44],[-43.33,-31.94],[-43.83,-29.59]]},{"id":"HT-BUSH-078","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-43.34,-31.87],[-45.66,-32.49],[-45.04,-34.81],[-42.72,-34.19],[-43.34,-31.87]]},{"id":"HT-BUSH-079","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-42.74,-34.12],[-45.02,-34.87],[-44.28,-37.15],[-42.0,-36.41],[-42.74,-34.12]]},{"id":"HT-BUSH-080","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-42.02,-36.34],[-44.26,-37.2],[-43.4,-39.45],[-41.16,-38.59],[-42.02,-36.34]]},{"id":"HT-BUSH-081","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-41.19,-38.52],[-43.38,-39.5],[-42.4,-41.69],[-40.21,-40.72],[-41.19,-38.52]]},{"id":"HT-BUSH-082","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-40.24,-40.66],[-42.38,-41.75],[-41.29,-43.88],[-39.15,-42.79],[-40.24,-40.66]]},{"id":"HT-BUSH-083","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-39.18,-42.74],[-41.26,-43.94],[-40.06,-46.01],[-37.98,-44.81],[-39.18,-42.74]]},{"id":"HT-BUSH-084","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-38.02,-44.76],[-40.03,-46.06],[-38.72,-48.08],[-36.71,-46.77],[-38.02,-44.76]]},{"id":"HT-BUSH-085","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-36.75,-46.72],[-38.69,-48.13],[-37.28,-50.07],[-35.34,-48.66],[-36.75,-46.72]]},{"id":"HT-BUSH-086","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-35.38,-48.6],[-37.24,-50.11],[-35.73,-51.98],[-33.87,-50.47],[-35.38,-48.6]]},{"id":"HT-BUSH-087","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-33.91,-50.42],[-35.69,-52.02],[-34.09,-53.81],[-32.3,-52.2],[-33.91,-50.42]]},{"id":"HT-BUSH-088","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-32.35,-52.15],[-34.05,-53.85],[-32.35,-55.55],[-30.65,-53.85],[-32.35,-52.15]]},{"id":"HT-BUSH-089","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-30.7,-53.8],[-32.31,-55.59],[-30.52,-57.19],[-28.92,-55.41],[-30.7,-53.8]]},{"id":"HT-BUSH-090","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-28.97,-55.37],[-30.48,-57.23],[-28.61,-58.74],[-27.1,-56.88],[-28.97,-55.37]]},{"id":"HT-BUSH-091","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-27.16,-56.84],[-28.57,-58.78],[-26.63,-60.19],[-25.21,-58.25],[-27.16,-56.84]]},{"id":"HT-BUSH-092","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-25.27,-58.21],[-26.58,-60.22],[-24.56,-61.53],[-23.26,-59.52],[-25.27,-58.21]]},{"id":"HT-BUSH-093","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-23.31,-59.48],[-24.51,-61.56],[-22.44,-62.76],[-21.24,-60.68],[-23.31,-59.48]]},{"id":"HT-BUSH-094","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-21.29,-60.65],[-22.38,-62.79],[-20.25,-63.88],[-19.16,-61.74],[-21.29,-60.65]]},{"id":"HT-BUSH-095","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-19.22,-61.71],[-20.19,-63.9],[-18.0,-64.88],[-17.02,-62.69],[-19.22,-61.71]]},{"id":"HT-BUSH-096","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-17.09,-62.66],[-17.95,-64.9],[-15.71,-65.76],[-14.85,-63.52],[-17.09,-62.66]]},{"id":"HT-BUSH-097","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-14.91,-63.5],[-15.65,-65.78],[-13.37,-66.52],[-12.62,-64.24],[-14.91,-63.5]]},{"id":"HT-BUSH-098","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-12.69,-64.22],[-13.31,-66.54],[-10.99,-67.16],[-10.37,-64.84],[-12.69,-64.22]]},{"id":"HT-BUSH-099","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-10.44,-64.83],[-10.94,-67.17],[-8.59,-67.67],[-8.09,-65.33],[-10.44,-64.83]]},{"id":"HT-BUSH-100","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-8.15,-65.31],[-8.53,-67.68],[-6.16,-68.06],[-5.78,-65.69],[-8.15,-65.31]]},{"id":"HT-BUSH-101","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-5.85,-65.68],[-6.1,-68.07],[-3.71,-68.32],[-3.46,-65.93],[-5.85,-65.68]]},{"id":"HT-BUSH-102","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-3.53,-65.93],[-3.66,-68.32],[-1.26,-68.45],[-1.13,-66.05],[-3.53,-65.93]]},{"id":"HT-BUSH-103","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-1.2,-66.05],[-1.2,-68.45],[1.2,-68.45],[1.2,-66.05],[-1.2,-66.05]]},{"id":"HT-BUSH-104","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[1.13,-66.05],[1.26,-68.45],[3.66,-68.32],[3.53,-65.93],[1.13,-66.05]]},{"id":"HT-BUSH-105","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[3.46,-65.93],[3.71,-68.32],[6.1,-68.07],[5.85,-65.68],[3.46,-65.93]]},{"id":"HT-BUSH-106","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[5.78,-65.69],[6.16,-68.06],[8.53,-67.68],[8.15,-65.31],[5.78,-65.69]]},{"id":"HT-BUSH-107","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[8.09,-65.33],[8.59,-67.67],[10.94,-67.17],[10.44,-64.83],[8.09,-65.33]]},{"id":"HT-BUSH-108","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[10.37,-64.84],[10.99,-67.16],[13.31,-66.54],[12.69,-64.22],[10.37,-64.84]]},{"id":"HT-BUSH-109","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[12.62,-64.24],[13.37,-66.52],[15.65,-65.78],[14.91,-63.5],[12.62,-64.24]]},{"id":"HT-BUSH-110","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[14.85,-63.52],[15.71,-65.76],[17.95,-64.9],[17.09,-62.66],[14.85,-63.52]]},{"id":"HT-BUSH-111","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[17.02,-62.69],[18.0,-64.88],[20.19,-63.9],[19.22,-61.71],[17.02,-62.69]]},{"id":"HT-BUSH-112","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[19.16,-61.74],[20.25,-63.88],[22.38,-62.79],[21.29,-60.65],[19.16,-61.74]]},{"id":"HT-BUSH-113","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[21.24,-60.68],[22.44,-62.76],[24.51,-61.56],[23.31,-59.48],[21.24,-60.68]]},{"id":"HT-BUSH-114","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[23.26,-59.52],[24.56,-61.53],[26.58,-60.22],[25.27,-58.21],[23.26,-59.52]]},{"id":"HT-BUSH-115","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[25.21,-58.25],[26.63,-60.19],[28.57,-58.78],[27.16,-56.84],[25.21,-58.25]]},{"id":"HT-BUSH-116","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[27.1,-56.88],[28.61,-58.74],[30.48,-57.23],[28.97,-55.37],[27.1,-56.88]]},{"id":"HT-BUSH-117","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[28.92,-55.41],[30.52,-57.19],[32.31,-55.59],[30.7,-53.8],[28.92,-55.41]]},{"id":"HT-BUSH-118","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[30.65,-53.85],[32.35,-55.55],[34.05,-53.85],[32.35,-52.15],[30.65,-53.85]]},{"id":"HT-BUSH-119","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[32.3,-52.2],[34.09,-53.81],[35.69,-52.02],[33.91,-50.42],[32.3,-52.2]]},{"id":"HT-BUSH-120","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[33.87,-50.47],[35.73,-51.98],[37.24,-50.11],[35.38,-48.6],[33.87,-50.47]]},{"id":"HT-BUSH-121","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[35.34,-48.66],[37.28,-50.07],[38.69,-48.13],[36.75,-46.72],[35.34,-48.66]]},{"id":"HT-BUSH-122","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[36.71,-46.77],[38.72,-48.08],[40.03,-46.06],[38.02,-44.76],[36.71,-46.77]]},{"id":"HT-BUSH-123","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[37.98,-44.81],[40.06,-46.01],[41.26,-43.94],[39.18,-42.74],[37.98,-44.81]]},{"id":"HT-BUSH-124","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[39.15,-42.79],[41.29,-43.88],[42.38,-41.75],[40.24,-40.66],[39.15,-42.79]]},{"id":"HT-BUSH-125","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[40.21,-40.72],[42.4,-41.69],[43.38,-39.5],[41.19,-38.52],[40.21,-40.72]]},{"id":"HT-BUSH-126","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[41.16,-38.59],[43.4,-39.45],[44.26,-37.2],[42.02,-36.34],[41.16,-38.59]]},{"id":"HT-BUSH-127","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[42.0,-36.41],[44.28,-37.15],[45.02,-34.87],[42.74,-34.12],[42.0,-36.41]]},{"id":"HT-BUSH-128","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[42.72,-34.19],[45.04,-34.81],[45.66,-32.49],[43.34,-31.87],[42.72,-34.19]]},{"id":"HT-BUSH-129","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[43.33,-31.94],[45.67,-32.44],[46.17,-30.09],[43.83,-29.59],[43.33,-31.94]]},{"id":"HT-BUSH-130","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[43.81,-29.65],[46.18,-30.03],[46.56,-27.66],[44.19,-27.28],[43.81,-29.65]]},{"id":"HT-BUSH-131","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[44.18,-27.35],[46.57,-27.6],[46.82,-25.21],[44.43,-24.96],[44.18,-27.35]]},{"id":"HT-BUSH-132","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[44.43,-25.03],[46.82,-25.16],[46.95,-22.76],[44.55,-22.63],[44.43,-25.03]]},{"id":"HT-BUSH-133","zone":null,"name":"Hàng Bụi Cây Sát Tường (Cung Bắc)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[44.55,-22.7],[46.95,-22.7],[46.95,-20.3],[44.55,-20.3],[44.55,-22.7]]},{"id":"HT-BUSH-134","zone":null,"name":"Hàng Bụi Cây Sát Tường (Xéo Tây-Nam)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-43.72,66.48],[-41.51,65.53],[-40.57,67.74],[-42.77,68.68],[-43.72,66.48]]},{"id":"HT-BUSH-135","zone":null,"name":"Hàng Bụi Cây Sát Tường (Xéo Tây-Nam)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-41.37,65.48],[-39.16,64.53],[-38.22,66.74],[-40.43,67.68],[-41.37,65.48]]},{"id":"HT-BUSH-136","zone":null,"name":"Hàng Bụi Cây Sát Tường (Xéo Tây-Nam)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-39.03,64.48],[-36.82,63.53],[-35.88,65.74],[-38.09,66.68],[-39.03,64.48]]},{"id":"HT-BUSH-137","zone":null,"name":"Hàng Bụi Cây Sát Tường (Xéo Tây-Nam)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-36.69,63.48],[-34.48,62.53],[-33.53,64.74],[-35.74,65.68],[-36.69,63.48]]},{"id":"HT-BUSH-138","zone":null,"name":"Hàng Bụi Cây Sát Tường (Xéo Tây-Nam)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-34.34,62.48],[-32.13,61.53],[-31.19,63.74],[-33.4,64.68],[-34.34,62.48]]},{"id":"HT-BUSH-139","zone":null,"name":"Hàng Bụi Cây Sát Tường (Xéo Tây-Nam)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-32.0,61.48],[-29.79,60.53],[-28.85,62.74],[-31.05,63.68],[-32.0,61.48]]},{"id":"HT-BUSH-140","zone":null,"name":"Hàng Bụi Cây Sát Tường (Xéo Tây-Nam)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-29.65,60.48],[-27.45,59.53],[-26.5,61.74],[-28.71,62.68],[-29.65,60.48]]},{"id":"HT-BUSH-141","zone":null,"name":"Hàng Bụi Cây Sát Tường (Xéo Tây-Nam)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-27.31,59.48],[-25.1,58.53],[-24.16,60.74],[-26.37,61.68],[-27.31,59.48]]},{"id":"HT-BUSH-142","zone":null,"name":"Hàng Bụi Cây Sát Tường (Xéo Tây-Nam)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-24.97,58.48],[-22.76,57.53],[-21.82,59.74],[-24.02,60.68],[-24.97,58.48]]},{"id":"HT-BUSH-143","zone":null,"name":"Hàng Bụi Cây Sát Tường (Xéo Tây-Nam)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-22.62,57.48],[-20.41,56.53],[-19.47,58.74],[-21.68,59.68],[-22.62,57.48]]},{"id":"HT-BUSH-144","zone":null,"name":"Hàng Bụi Cây Sát Tường (Xéo Tây-Nam)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-20.28,56.48],[-18.07,55.53],[-17.13,57.74],[-19.34,58.68],[-20.28,56.48]]},{"id":"HT-BUSH-145","zone":null,"name":"Hàng Bụi Cây Sát Tường (Xéo Tây-Nam)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-17.93,55.48],[-15.73,54.53],[-14.79,56.74],[-16.99,57.68],[-17.93,55.48]]},{"id":"HT-BUSH-146","zone":null,"name":"Hàng Bụi Cây Sát Tường (Xéo Tây-Nam)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-15.59,54.48],[-13.38,53.53],[-12.44,55.74],[-14.65,56.68],[-15.59,54.48]]},{"id":"HT-BUSH-147","zone":null,"name":"Hàng Bụi Cây Sát Tường (Xéo Tây-Nam)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-13.25,53.48],[-11.04,52.53],[-10.1,54.74],[-12.3,55.68],[-13.25,53.48]]},{"id":"HT-BUSH-148","zone":null,"name":"Hàng Bụi Cây Sát Tường (Xéo Tây-Nam)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-10.9,52.48],[-8.7,51.53],[-7.75,53.74],[-9.96,54.68],[-10.9,52.48]]},{"id":"HT-BUSH-149","zone":null,"name":"Hàng Bụi Cây Sát Tường (Xéo Tây-Nam)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[-8.56,51.48],[-6.35,50.53],[-5.41,52.74],[-7.62,53.68],[-8.56,51.48]]},{"id":"HT-BUSH-150","zone":null,"name":"Hàng Bụi Cây Sát Tường (Xéo Đông-Nam)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[6.35,50.53],[8.56,51.48],[7.62,53.68],[5.41,52.74],[6.35,50.53]]},{"id":"HT-BUSH-151","zone":null,"name":"Hàng Bụi Cây Sát Tường (Xéo Đông-Nam)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[8.7,51.53],[10.9,52.48],[9.96,54.68],[7.75,53.74],[8.7,51.53]]},{"id":"HT-BUSH-152","zone":null,"name":"Hàng Bụi Cây Sát Tường (Xéo Đông-Nam)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[11.04,52.53],[13.25,53.48],[12.3,55.68],[10.1,54.74],[11.04,52.53]]},{"id":"HT-BUSH-153","zone":null,"name":"Hàng Bụi Cây Sát Tường (Xéo Đông-Nam)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[13.38,53.53],[15.59,54.48],[14.65,56.68],[12.44,55.74],[13.38,53.53]]},{"id":"HT-BUSH-154","zone":null,"name":"Hàng Bụi Cây Sát Tường (Xéo Đông-Nam)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[15.73,54.53],[17.93,55.48],[16.99,57.68],[14.79,56.74],[15.73,54.53]]},{"id":"HT-BUSH-155","zone":null,"name":"Hàng Bụi Cây Sát Tường (Xéo Đông-Nam)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[18.07,55.53],[20.28,56.48],[19.34,58.68],[17.13,57.74],[18.07,55.53]]},{"id":"HT-BUSH-156","zone":null,"name":"Hàng Bụi Cây Sát Tường (Xéo Đông-Nam)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[20.41,56.53],[22.62,57.48],[21.68,59.68],[19.47,58.74],[20.41,56.53]]},{"id":"HT-BUSH-157","zone":null,"name":"Hàng Bụi Cây Sát Tường (Xéo Đông-Nam)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[22.76,57.53],[24.97,58.48],[24.02,60.68],[21.82,59.74],[22.76,57.53]]},{"id":"HT-BUSH-158","zone":null,"name":"Hàng Bụi Cây Sát Tường (Xéo Đông-Nam)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[25.1,58.53],[27.31,59.48],[26.37,61.68],[24.16,60.74],[25.1,58.53]]},{"id":"HT-BUSH-159","zone":null,"name":"Hàng Bụi Cây Sát Tường (Xéo Đông-Nam)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[27.45,59.53],[29.65,60.48],[28.71,62.68],[26.5,61.74],[27.45,59.53]]},{"id":"HT-BUSH-160","zone":null,"name":"Hàng Bụi Cây Sát Tường (Xéo Đông-Nam)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[29.79,60.53],[32.0,61.48],[31.05,63.68],[28.85,62.74],[29.79,60.53]]},{"id":"HT-BUSH-161","zone":null,"name":"Hàng Bụi Cây Sát Tường (Xéo Đông-Nam)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[32.13,61.53],[34.34,62.48],[33.4,64.68],[31.19,63.74],[32.13,61.53]]},{"id":"HT-BUSH-162","zone":null,"name":"Hàng Bụi Cây Sát Tường (Xéo Đông-Nam)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[34.48,62.53],[36.69,63.48],[35.74,65.68],[33.53,64.74],[34.48,62.53]]},{"id":"HT-BUSH-163","zone":null,"name":"Hàng Bụi Cây Sát Tường (Xéo Đông-Nam)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[36.82,63.53],[39.03,64.48],[38.09,66.68],[35.88,65.74],[36.82,63.53]]},{"id":"HT-BUSH-164","zone":null,"name":"Hàng Bụi Cây Sát Tường (Xéo Đông-Nam)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[39.16,64.53],[41.37,65.48],[40.43,67.68],[38.22,66.74],[39.16,64.53]]},{"id":"HT-BUSH-165","zone":null,"name":"Hàng Bụi Cây Sát Tường (Xéo Đông-Nam)","type":"CAY_XANH","area":5.76,"height":1.2,"buffer":0.0,"poly":[[41.51,65.53],[43.72,66.48],[42.77,68.68],[40.57,67.74],[41.51,65.53]]},{"id":"HT-TREE-01","zone":null,"name":"Cây Xanh Nội Khu Gần Rào (Tây)","type":"CAY_XANH","area":8.0,"height":5.5,"buffer":1.0,"poly":[[-39.9,8.0],[-40.02,8.61],[-40.37,9.13],[-40.89,9.48],[-41.5,9.6],[-42.11,9.48],[-42.63,9.13],[-42.98,8.61],[-43.1,8.0],[-42.98,7.39],[-42.63,6.87],[-42.11,6.52],[-41.5,6.4],[-40.89,6.52],[-40.37,6.87],[-40.02,7.39],[-39.9,8.0]]},{"id":"HT-TREE-02","zone":null,"name":"Cây Xanh Nội Khu Gần Rào (Đông)","type":"CAY_XANH","area":8.0,"height":5.5,"buffer":1.0,"poly":[[43.1,8.0],[42.98,8.61],[42.63,9.13],[42.11,9.48],[41.5,9.6],[40.89,9.48],[40.37,9.13],[40.02,8.61],[39.9,8.0],[40.02,7.39],[40.37,6.87],[40.89,6.52],[41.5,6.4],[42.11,6.52],[42.63,6.87],[42.98,7.39],[43.1,8.0]]},{"id":"HT-TREE-03","zone":null,"name":"Cây Xanh Nội Khu Gần Rào (Tây)","type":"CAY_XANH","area":8.0,"height":5.5,"buffer":1.0,"poly":[[-39.9,22.0],[-40.02,22.61],[-40.37,23.13],[-40.89,23.48],[-41.5,23.6],[-42.11,23.48],[-42.63,23.13],[-42.98,22.61],[-43.1,22.0],[-42.98,21.39],[-42.63,20.87],[-42.11,20.52],[-41.5,20.4],[-40.89,20.52],[-40.37,20.87],[-40.02,21.39],[-39.9,22.0]]},{"id":"HT-TREE-04","zone":null,"name":"Cây Xanh Nội Khu Gần Rào (Đông)","type":"CAY_XANH","area":8.0,"height":5.5,"buffer":1.0,"poly":[[43.1,22.0],[42.98,22.61],[42.63,23.13],[42.11,23.48],[41.5,23.6],[40.89,23.48],[40.37,23.13],[40.02,22.61],[39.9,22.0],[40.02,21.39],[40.37,20.87],[40.89,20.52],[41.5,20.4],[42.11,20.52],[42.63,20.87],[42.98,21.39],[43.1,22.0]]},{"id":"HT-TREE-05","zone":null,"name":"Cây Xanh Nội Khu Gần Rào (Tây)","type":"CAY_XANH","area":8.0,"height":5.5,"buffer":1.0,"poly":[[-39.9,36.0],[-40.02,36.61],[-40.37,37.13],[-40.89,37.48],[-41.5,37.6],[-42.11,37.48],[-42.63,37.13],[-42.98,36.61],[-43.1,36.0],[-42.98,35.39],[-42.63,34.87],[-42.11,34.52],[-41.5,34.4],[-40.89,34.52],[-40.37,34.87],[-40.02,35.39],[-39.9,36.0]]},{"id":"HT-TREE-06","zone":null,"name":"Cây Xanh Nội Khu Gần Rào (Đông)","type":"CAY_XANH","area":8.0,"height":5.5,"buffer":1.0,"poly":[[43.1,36.0],[42.98,36.61],[42.63,37.13],[42.11,37.48],[41.5,37.6],[40.89,37.48],[40.37,37.13],[40.02,36.61],[39.9,36.0],[40.02,35.39],[40.37,34.87],[40.89,34.52],[41.5,34.4],[42.11,34.52],[42.63,34.87],[42.98,35.39],[43.1,36.0]]},{"id":"HT-TREE-07","zone":null,"name":"Cây Xanh Nội Khu Gần Rào (Tây)","type":"CAY_XANH","area":8.0,"height":5.5,"buffer":1.0,"poly":[[-39.9,48.0],[-40.02,48.61],[-40.37,49.13],[-40.89,49.48],[-41.5,49.6],[-42.11,49.48],[-42.63,49.13],[-42.98,48.61],[-43.1,48.0],[-42.98,47.39],[-42.63,46.87],[-42.11,46.52],[-41.5,46.4],[-40.89,46.52],[-40.37,46.87],[-40.02,47.39],[-39.9,48.0]]},{"id":"HT-TREE-08","zone":null,"name":"Cây Xanh Nội Khu Gần Rào (Đông)","type":"CAY_XANH","area":8.0,"height":5.5,"buffer":1.0,"poly":[[43.1,48.0],[42.98,48.61],[42.63,49.13],[42.11,49.48],[41.5,49.6],[40.89,49.48],[40.37,49.13],[40.02,48.61],[39.9,48.0],[40.02,47.39],[40.37,46.87],[40.89,46.52],[41.5,46.4],[42.11,46.52],[42.63,46.87],[42.98,47.39],[43.1,48.0]]}],"roads":[{"id":"TD-MAIN-S","zone":null,"name":"Đại Lộ Chính Cổng 1 - Cổng 2 - Tượng Đài","width":6.0,"area":460.0,"line":[[0.0,64.0,0.19],[0.0,50.0,0.5],[0.0,36.2,1.0],[0.0,22.5,1.44],[0.0,20.0,1.5],[0.0,3.5,1.56],[0.0,-13.0,1.01]]},{"id":"TD-MAIN-N","zone":"PK-B","name":"Trục Chính Bắc Vòng Tròn","width":4.5,"area":150.0,"line":[[0.0,-30.0,-0.13],[0.0,-46.5,-1.47],[0.0,-63.0,-2.64]]},{"id":"TD-RING-IN","zone":null,"name":"Đường Vành Đai Trong (R=25m)","width":3.0,"area":471.0,"line":[[25.0,-21.5,2.95],[24.15,-15.03,3.31],[21.65,-9.0,3.44],[17.68,-3.82,3.32],[12.5,0.15,2.93],[6.47,2.65,2.32],[0.0,3.5,1.56],[-6.47,2.65,0.78],[-12.5,0.15,0.08],[-17.68,-3.82,-0.53],[-21.65,-9.0,-1.04],[-24.15,-15.03,-1.51],[-25.0,-21.5,-1.96],[-24.15,-27.97,-2.38],[-21.65,-34.0,-2.69],[-17.68,-39.18,-2.8],[-12.5,-43.15,-2.63],[-6.47,-45.65,-2.17],[-0.0,-46.5,-1.47],[6.47,-45.65,-0.64],[12.5,-43.15,0.23],[17.68,-39.18,1.05],[21.65,-34.0,1.79],[24.15,-27.97,2.43],[25.0,-21.5,2.95]]},{"id":"TD-RING-OUT","zone":null,"name":"Đường Vành Đai Ngoài (R=41.5m)","width":3.0,"area":782.0,"line":[[41.5,-21.5,3.32],[40.09,-10.76,3.96],[35.94,-0.75,4.31],[29.34,7.84,4.27],[20.75,14.44,3.75],[10.74,18.59,2.77],[0.0,20.0,1.5],[-10.74,18.59,0.28],[-20.75,14.44,-0.59],[-29.34,7.84,-1.07],[-35.94,-0.75,-1.35],[-40.09,-10.76,-1.71],[-41.5,-21.5,-2.33],[-40.09,-32.24,-3.15],[-35.94,-42.25,-3.96],[-29.34,-50.84,-4.48],[-20.75,-57.44,-4.46],[-10.74,-61.59,-3.8],[-0.0,-63.0,-2.64],[10.74,-61.59,-1.31],[20.75,-57.44,-0.12],[29.34,-50.84,0.86],[35.94,-42.25,1.7],[40.09,-32.24,2.53],[41.5,-21.5,3.32]]},{"id":"TD-SPOKE-SE","zone":"PK-C","name":"Lối Xuyên Tâm Đông-Nam","width":2.8,"area":94.0,"line":[[7.36,-17.25,1.64],[21.65,-9.0,3.44],[35.94,-0.75,4.31]]},{"id":"TD-SPOKE-SW","zone":"PK-A","name":"Lối Xuyên Tâm Tây-Nam","width":2.8,"area":94.0,"line":[[-7.36,-17.25,-0.1],[-21.65,-9.0,-1.04],[-35.94,-0.75,-1.35]]},{"id":"TD-SPOKE-NW","zone":"PK-B","name":"Lối Xuyên Tâm Tây-Bắc","width":2.8,"area":94.0,"line":[[-7.36,-25.75,-0.68],[-21.65,-34.0,-2.69],[-35.94,-42.25,-3.96]]},{"id":"TD-SPOKE-NE","zone":"PK-B","name":"Lối Xuyên Tâm Đông-Bắc","width":2.8,"area":94.0,"line":[[7.36,-25.75,1.06],[21.65,-34.0,1.79],[35.94,-42.25,1.7]]},{"id":"TD-SERVICE-E","zone":null,"name":"Lối Xe Nội Bộ Ra Bãi Xe Nhân Viên (Giữa 2 Tòa Nhà)","width":3.2,"area":82.0,"line":[[0.0,36.2,1.0],[14.0,36.2,2.58],[24.5,36.2,3.43]]},{"id":"TD-ENTRY-PARK-W","zone":null,"name":"Lối Vào Bãi Giữ Xe Khách Tham Quan","width":4.0,"area":42.0,"line":[[0.0,36.2,1.0],[-9.5,36.2,-0.11]]}],"graves":[{"id":"C-001","zone":"PK-C","model":"MM-03","slot":"Vòng 1 - Cung C1 - Ô 1","status":"Đã an táng","area":3.3,"y":2.15,"rot":218.5,"cx":7.78,"cz":-11.72,"poly":[[8.17,-10.45],[6.45,-11.82],[7.39,-12.99],[9.11,-11.62],[8.17,-10.45]],"person":{"id":"NM-C001","name":"Nguyễn Văn An","dob":"01/01/1935","dod":"01/01/2018","burial":"03/01/2018","kin":"Nguyễn Minh Hải - 0910000000"}},{"id":"C-002","zone":"PK-C","model":"MM-03","slot":"Vòng 1 - Cung C1 - Ô 2","status":"Đã đặt trước","area":3.3,"y":1.85,"rot":201.49,"cx":4.58,"cz":-9.87,"poly":[[5.33,-8.77],[3.28,-9.57],[3.83,-10.97],[5.88,-10.16],[5.33,-8.77]]},{"id":"C-003","zone":"PK-C","model":"MM-03","slot":"Vòng 2 - Cung C1 - Ô 1","status":"Đã an táng","area":3.3,"y":2.65,"rot":224.63,"cx":11.59,"cz":-9.76,"poly":[[11.85,-8.45],[10.28,-10.0],[11.33,-11.07],[12.9,-9.52],[11.85,-8.45]],"person":{"id":"NM-C003","name":"Lê Ngọc Sơn","dob":"03/03/1937","dod":"03/03/2020","burial":"05/03/2020","kin":"Lê Minh Hùng - 0910027582"}},{"id":"C-004","zone":"PK-C","model":"MM-03","slot":"Vòng 2 - Cung C1 - Ô 2","status":"Trống","area":3.3,"y":2.48,"rot":214.86,"cx":9.43,"cz":-7.96,"poly":[[9.9,-6.72],[8.1,-7.97],[8.96,-9.2],[10.76,-7.95],[9.9,-6.72]]},{"id":"C-005","zone":"PK-C","model":"MM-03","slot":"Vòng 2 - Cung C1 - Ô 3","status":"Đã an táng","area":3.3,"y":2.25,"rot":205.14,"cx":7.01,"cz":-6.56,"poly":[[7.69,-5.41],[5.7,-6.35],[6.33,-7.71],[8.32,-6.77],[7.69,-5.41]],"person":{"id":"NM-C005","name":"Hoàng Minh Lan","dob":"05/05/1939","dod":"05/05/2022","burial":"07/05/2022","kin":"Hoàng Minh Linh - 0910055164"}},{"id":"C-006","zone":"PK-C","model":"MM-03","slot":"Vòng 2 - Cung C1 - Ô 4","status":"Đã an táng","area":3.3,"y":1.97,"rot":195.36,"cx":4.37,"cz":-5.59,"poly":[[5.23,-4.58],[3.11,-5.16],[3.51,-6.61],[5.63,-6.02],[5.23,-4.58]],"person":{"id":"NM-C006","name":"Huỳnh Thanh Tâm","dob":"06/06/1940","dod":"06/06/2023","burial":"08/06/2023","kin":"Huỳnh Minh Mai - 0910068955"}},{"id":"C-007","zone":"PK-C","model":"MM-03","slot":"Vòng 3 - Cung C1 - Ô 1","status":"Đã đặt trước","area":3.3,"y":3.07,"rot":227.19,"cx":15.04,"cz":-7.57,"poly":[[15.24,-6.25],[13.74,-7.87],[14.84,-8.89],[16.34,-7.27],[15.24,-6.25]]},{"id":"C-008","zone":"PK-C","model":"MM-03","slot":"Vòng 3 - Cung C1 - Ô 2","status":"Trống","area":3.3,"y":2.91,"rot":218.6,"cx":12.79,"cz":-5.48,"poly":[[13.18,-4.21],[11.46,-5.58],[12.4,-6.75],[14.12,-5.38],[13.18,-4.21]]},{"id":"C-009","zone":"PK-C","model":"MM-03","slot":"Vòng 3 - Cung C1 - Ô 3","status":"Đã an táng","area":3.3,"y":2.68,"rot":210.0,"cx":10.25,"cz":-3.75,"poly":[[10.83,-2.55],[8.92,-3.65],[9.67,-4.95],[11.58,-3.85],[10.83,-2.55]],"person":{"id":"NM-C009","name":"Võ Quốc Thảo","dob":"09/09/1943","dod":"09/09/2018","burial":"11/09/2018","kin":"Võ Minh Quân - 0910110328"}},{"id":"C-010","zone":"PK-C","model":"MM-03","slot":"Vòng 3 - Cung C1 - Ô 4","status":"Trống","area":3.3,"y":2.41,"rot":201.4,"cx":7.48,"cz":-2.41,"poly":[[8.23,-1.31],[6.18,-2.11],[6.73,-3.51],[8.78,-2.71],[8.23,-1.31]]},{"id":"C-011","zone":"PK-C","model":"MM-03","slot":"Vòng 3 - Cung C1 - Ô 5","status":"Đã an táng","area":3.3,"y":2.08,"rot":192.8,"cx":4.54,"cz":-1.51,"poly":[[5.45,-0.54],[3.3,-1.02],[3.63,-2.48],[5.78,-2.0],[5.45,-0.54]],"person":{"id":"NM-C011","name":"Bùi Văn Mai","dob":"11/11/1945","dod":"11/11/2020","burial":"13/11/2020","kin":"Bùi Minh Tâm - 0910137910"}},{"id":"C-012","zone":"PK-C","model":"MM-03","slot":"Vòng 4 - Cung C1 - Ô 1","status":"Đã an táng","area":3.3,"y":3.83,"rot":230.56,"cx":22.78,"cz":-2.76,"poly":[[22.9,-1.43],[21.5,-3.13],[22.66,-4.09],[24.06,-2.39],[22.9,-1.43]],"person":{"id":"NM-C012","name":"Đỗ Hữu Tuấn","dob":"12/12/1946","dod":"12/12/2021","burial":"14/12/2021","kin":"Đỗ Minh Thảo - 0910151701"}},{"id":"C-013","zone":"PK-C","model":"MM-03","slot":"Vòng 4 - Cung C1 - Ô 2","status":"Đã đặt trước","area":3.3,"y":3.73,"rot":224.7,"cx":20.75,"cz":-0.53,"poly":[[21.0,0.78],[19.44,-0.77],[20.5,-1.84],[22.06,-0.29],[21.0,0.78]]},{"id":"C-014","zone":"PK-C","model":"MM-03","slot":"Vòng 4 - Cung C1 - Ô 3","status":"Trống","area":3.3,"y":3.57,"rot":218.81,"cx":18.49,"cz":1.49,"poly":[[18.88,2.76],[17.16,1.39],[18.1,0.22],[19.82,1.59],[18.88,2.76]]},{"id":"C-015","zone":"PK-C","model":"MM-03","slot":"Vòng 4 - Cung C1 - Ô 4","status":"Đã an táng","area":3.3,"y":3.37,"rot":212.94,"cx":16.04,"cz":3.26,"poly":[[16.55,4.49],[14.71,3.29],[15.53,2.03],[17.37,3.23],[16.55,4.49]],"person":{"id":"NM-C015","name":"Lê Minh Vinh","dob":"15/03/1949","dod":"15/03/2024","burial":"17/03/2024","kin":"Lê Minh Yến - 0910193074"}},{"id":"C-016","zone":"PK-C","model":"MM-03","slot":"Vòng 4 - Cung C1 - Ô 5","status":"Trống","area":3.3,"y":3.13,"rot":207.06,"cx":13.42,"cz":4.77,"poly":[[14.06,5.94],[12.1,4.94],[12.78,3.6],[14.74,4.6],[14.06,5.94]]},{"id":"C-017","zone":"PK-C","model":"MM-03","slot":"Vòng 4 - Cung C1 - Ô 6","status":"Đã an táng","area":3.3,"y":2.84,"rot":201.18,"cx":10.66,"cz":6.01,"poly":[[11.41,7.11],[9.36,6.31],[9.9,4.91],[11.96,5.71],[11.41,7.11]],"person":{"id":"NM-C017","name":"Hoàng Đức Phúc","dob":"17/05/1951","dod":"17/05/2018","burial":"19/05/2018","kin":"Hoàng Minh Bình - 0910220656"}},{"id":"C-018","zone":"PK-C","model":"MM-03","slot":"Vòng 4 - Cung C1 - Ô 7","status":"Đã an táng","area":3.3,"y":2.52,"rot":195.31,"cx":7.79,"cz":6.95,"poly":[[8.65,7.96],[6.53,7.38],[6.93,5.94],[9.05,6.52],[8.65,7.96]],"person":{"id":"NM-C018","name":"Huỳnh Thị Yến","dob":"18/06/1952","dod":"18/06/2019","burial":"20/06/2019","kin":"Huỳnh Minh Cường - 0910234447"}},{"id":"C-019","zone":"PK-C","model":"MM-03","slot":"Vòng 4 - Cung C1 - Ô 8","status":"Đã an táng","area":3.3,"y":2.18,"rot":189.44,"cx":4.84,"cz":7.6,"poly":[[5.8,8.52],[3.63,8.16],[3.88,6.68],[6.05,7.04],[5.8,8.52]],"person":{"id":"NM-C019","name":"Phan Quốc Hòa","dob":"19/07/1953","dod":"19/07/2020","burial":"21/07/2020","kin":"Phan Minh Dũng - 0910248238"}},{"id":"C-020","zone":"PK-C","model":"MM-03","slot":"Vòng 5 - Cung C1 - Ô 1","status":"Trống","area":3.3,"y":4.08,"rot":231.59,"cx":26.25,"cz":-0.69,"poly":[[26.35,0.64],[24.98,-1.09],[26.15,-2.02],[27.52,-0.29],[26.35,0.64]]},{"id":"C-021","zone":"PK-C","model":"MM-03","slot":"Vòng 5 - Cung C1 - Ô 2","status":"Đã an táng","area":3.3,"y":4.01,"rot":226.8,"cx":24.42,"cz":1.43,"poly":[[24.63,2.75],[23.12,1.14],[24.21,0.12],[25.72,1.72],[24.63,2.75]],"person":{"id":"NM-C021","name":"Võ Văn An","dob":"21/09/1955","dod":"21/09/2022","burial":"23/09/2022","kin":"Võ Minh Hải - 0910275820"}},{"id":"C-022","zone":"PK-C","model":"MM-03","slot":"Vòng 5 - Cung C1 - Ô 3","status":"Trống","area":3.3,"y":3.89,"rot":222.0,"cx":22.42,"cz":3.4,"poly":[[22.74,4.69],[21.1,3.22],[22.1,2.11],[23.74,3.58],[22.74,4.69]]},{"id":"C-023","zone":"PK-C","model":"MM-03","slot":"Vòng 5 - Cung C1 - Ô 4","status":"Đã an táng","area":3.3,"y":3.74,"rot":217.2,"cx":20.25,"cz":5.18,"poly":[[20.67,6.44],[18.92,5.11],[19.83,3.92],[21.58,5.25],[20.67,6.44]],"person":{"id":"NM-C023","name":"Bùi Ngọc Sơn","dob":"23/11/1957","dod":"23/11/2024","burial":"25/11/2024","kin":"Bùi Minh Hùng - 0910303402"}},{"id":"C-024","zone":"PK-C","model":"MM-03","slot":"Vòng 5 - Cung C1 - Ô 5","status":"Đã an táng","area":3.3,"y":3.55,"rot":212.4,"cx":17.95,"cz":6.78,"poly":[[18.48,8.0],[16.62,6.82],[17.42,5.56],[19.28,6.74],[18.48,8.0]],"person":{"id":"NM-C024","name":"Đỗ Anh Bình","dob":"24/12/1958","dod":"24/12/2025","burial":"26/12/2025","kin":"Đỗ Minh Lan - 0910317193"}},{"id":"C-025","zone":"PK-C","model":"MM-03","slot":"Vòng 5 - Cung C1 - Ô 6","status":"Đã an táng","area":3.3,"y":3.33,"rot":207.6,"cx":15.52,"cz":8.19,"poly":[[16.15,9.36],[14.2,8.35],[14.89,7.02],[16.84,8.04],[16.15,9.36]],"person":{"id":"NM-C025","name":"Nguyễn Minh Lan","dob":"25/01/1959","dod":"25/01/2018","burial":"27/01/2018","kin":"Nguyễn Minh Linh - 0910330984"}},{"id":"C-026","zone":"PK-C","model":"MM-03","slot":"Vòng 5 - Cung C1 - Ô 7","status":"Đã đặt trước","area":3.3,"y":3.07,"rot":202.8,"cx":12.98,"cz":9.38,"poly":[[13.7,10.5],[11.68,9.64],[12.26,8.26],[14.29,9.12],[13.7,10.5]]},{"id":"C-027","zone":"PK-C","model":"MM-03","slot":"Vòng 5 - Cung C1 - Ô 8","status":"Trống","area":3.3,"y":2.79,"rot":198.0,"cx":10.35,"cz":10.36,"poly":[[11.16,11.41],[9.07,10.73],[9.54,9.31],[11.63,9.99],[11.16,11.41]]},{"id":"C-028","zone":"PK-C","model":"MM-03","slot":"Vòng 5 - Cung C1 - Ô 9","status":"Đã an táng","area":3.3,"y":2.48,"rot":193.2,"cx":7.65,"cz":11.11,"poly":[[8.55,12.09],[6.41,11.59],[6.75,10.13],[8.89,10.63],[8.55,12.09]],"person":{"id":"NM-C028","name":"Phạm Thị Linh","dob":"03/04/1962","dod":"03/04/2021","burial":"05/04/2021","kin":"Phạm Minh Phúc - 0910372357"}},{"id":"C-029","zone":"PK-C","model":"MM-03","slot":"Vòng 5 - Cung C1 - Ô 10","status":"Trống","area":3.3,"y":2.16,"rot":188.39,"cx":4.89,"cz":11.64,"poly":[[5.87,12.54],[3.69,12.22],[3.91,10.74],[6.09,11.06],[5.87,12.54]]},{"id":"C-030","zone":"PK-C","model":"MM-03","slot":"Vòng 6 - Cung C1 - Ô 1","status":"Đã an táng","area":3.3,"y":4.26,"rot":232.27,"cx":29.66,"cz":1.45,"poly":[[29.74,2.78],[28.39,1.04],[29.58,0.12],[30.93,1.86],[29.74,2.78]],"person":{"id":"NM-C030","name":"Huỳnh Hoàng Dũng","dob":"05/06/1964","dod":"05/06/2023","burial":"07/06/2023","kin":"Huỳnh Minh Sơn - 0910399939"}},{"id":"C-031","zone":"PK-C","model":"MM-03","slot":"Vòng 6 - Cung C1 - Ô 2","status":"Đã an táng","area":3.3,"y":4.2,"rot":227.82,"cx":27.79,"cz":3.68,"poly":[[27.97,5.0],[26.5,3.37],[27.61,2.36],[29.08,3.99],[27.97,5.0]],"person":{"id":"NM-C031","name":"Phan Văn Mai","dob":"06/07/1965","dod":"06/07/2024","burial":"08/07/2024","kin":"Phan Minh Tâm - 0910413730"}},{"id":"C-032","zone":"PK-C","model":"MM-03","slot":"Vòng 6 - Cung C1 - Ô 3","status":"Đã đặt trước","area":3.3,"y":4.11,"rot":223.37,"cx":25.75,"cz":5.76,"poly":[[26.04,7.06],[24.43,5.55],[25.46,4.46],[27.07,5.97],[26.04,7.06]]},{"id":"C-033","zone":"PK-C","model":"MM-03","slot":"Vòng 6 - Cung C1 - Ô 4","status":"Trống","area":3.3,"y":3.97,"rot":218.91,"cx":23.55,"cz":7.68,"poly":[[23.93,8.96],[22.22,7.57],[23.16,6.41],[24.88,7.79],[23.93,8.96]]},{"id":"C-034","zone":"PK-C","model":"MM-03","slot":"Vòng 6 - Cung C1 - Ô 5","status":"Đã an táng","area":3.3,"y":3.8,"rot":214.46,"cx":21.22,"cz":9.42,"poly":[[21.7,10.66],[19.89,9.42],[20.74,8.18],[22.55,9.42],[21.7,10.66]],"person":{"id":"NM-C034","name":"Đặng Anh Nam","dob":"09/10/1968","dod":"09/10/2019","burial":"11/10/2019","kin":"Đặng Minh Vinh - 0910455103"}},{"id":"C-035","zone":"PK-C","model":"MM-03","slot":"Vòng 6 - Cung C1 - Ô 6","status":"Trống","area":3.3,"y":3.59,"rot":210.0,"cx":18.75,"cz":10.98,"poly":[[19.33,12.18],[17.42,11.08],[18.17,9.78],[20.08,10.88],[19.33,12.18]]},{"id":"C-036","zone":"PK-C","model":"MM-03","slot":"Vòng 6 - Cung C1 - Ô 7","status":"Đã an táng","area":3.3,"y":3.35,"rot":205.55,"cx":16.17,"cz":12.33,"poly":[[16.84,13.48],[14.85,12.53],[15.5,11.18],[17.49,12.13],[16.84,13.48]],"person":{"id":"NM-C036","name":"Đỗ Thanh Hải","dob":"11/12/1935","dod":"11/12/2021","burial":"13/12/2021","kin":"Đỗ Minh An - 0910482685"}},{"id":"C-037","zone":"PK-C","model":"MM-03","slot":"Vòng 6 - Cung C1 - Ô 8","status":"Đã an táng","area":3.3,"y":3.08,"rot":201.08,"cx":13.49,"cz":13.49,"poly":[[14.25,14.59],[12.19,13.79],[12.73,12.39],[14.79,13.19],[14.25,14.59]],"person":{"id":"NM-C037","name":"Nguyễn Đức Phúc","dob":"12/01/1936","dod":"12/01/2022","burial":"14/01/2022","kin":"Nguyễn Minh Bình - 0910496476"}},{"id":"C-038","zone":"PK-C","model":"MM-03","slot":"Vòng 6 - Cung C1 - Ô 9","status":"Đã an táng","area":3.3,"y":2.78,"rot":196.64,"cx":10.74,"cz":14.43,"poly":[[11.58,15.46],[9.47,14.83],[9.9,13.4],[12.01,14.03],[11.58,15.46]],"person":{"id":"NM-C038","name":"Trần Thị Yến","dob":"13/02/1937","dod":"13/02/2023","burial":"15/02/2023","kin":"Trần Minh Cường - 0910510267"}},{"id":"C-039","zone":"PK-C","model":"MM-03","slot":"Vòng 6 - Cung C1 - Ô 10","status":"Đã đặt trước","area":3.3,"y":2.45,"rot":192.18,"cx":7.91,"cz":15.16,"poly":[[8.83,16.12],[6.68,15.66],[6.99,14.2],[9.14,14.66],[8.83,16.12]]},{"id":"C-040","zone":"PK-C","model":"MM-03","slot":"Vòng 6 - Cung C1 - Ô 11","status":"Trống","area":3.3,"y":2.11,"rot":187.72,"cx":5.04,"cz":15.66,"poly":[[6.03,16.55],[3.85,16.25],[4.05,14.77],[6.23,15.06],[6.03,16.55]]},{"id":"A-001","zone":"PK-A","model":"MM-01","slot":"Vòng 1 - Cung A1 - Ô 1","status":"Đã an táng","area":3.3,"y":0.76,"rot":158.51,"cx":-4.58,"cz":-9.87,"poly":[[-3.28,-9.57],[-5.33,-8.77],[-5.88,-10.16],[-3.83,-10.97],[-3.28,-9.57]],"person":{"id":"NM-A001","name":"Hoàng Văn An","dob":"16/05/1940","dod":"16/05/2018","burial":"18/05/2018","kin":"Hoàng Minh Hải - 0910551640"}},{"id":"A-002","zone":"PK-A","model":"MM-01","slot":"Vòng 1 - Cung A1 - Ô 2","status":"Đã đặt trước","area":3.3,"y":0.32,"rot":141.5,"cx":-7.78,"cz":-11.72,"poly":[[-6.45,-11.82],[-8.17,-10.45],[-9.11,-11.62],[-7.39,-12.99],[-6.45,-11.82]]},{"id":"A-003","zone":"PK-A","model":"MM-01","slot":"Vòng 2 - Cung A1 - Ô 1","status":"Đã an táng","area":3.3,"y":0.93,"rot":164.64,"cx":-4.37,"cz":-5.59,"poly":[[-3.11,-5.16],[-5.23,-4.58],[-5.63,-6.02],[-3.51,-6.61],[-3.11,-5.16]],"person":{"id":"NM-A003","name":"Phan Ngọc Sơn","dob":"18/07/1942","dod":"18/07/2020","burial":"20/07/2020","kin":"Phan Minh Hùng - 0910579222"}},{"id":"A-004","zone":"PK-A","model":"MM-01","slot":"Vòng 2 - Cung A1 - Ô 2","status":"Trống","area":3.3,"y":0.59,"rot":154.86,"cx":-7.01,"cz":-6.56,"poly":[[-5.7,-6.35],[-7.69,-5.41],[-8.32,-6.77],[-6.33,-7.71],[-5.7,-6.35]]},{"id":"A-005","zone":"PK-A","model":"MM-01","slot":"Vòng 2 - Cung A1 - Ô 3","status":"Đã an táng","area":3.3,"y":0.28,"rot":145.14,"cx":-9.43,"cz":-7.96,"poly":[[-8.1,-7.97],[-9.9,-6.72],[-10.76,-7.95],[-8.96,-9.2],[-8.1,-7.97]],"person":{"id":"NM-A005","name":"Võ Minh Lan","dob":"20/09/1944","dod":"20/09/2022","burial":"22/09/2022","kin":"Võ Minh Linh - 0910606804"}},{"id":"A-006","zone":"PK-A","model":"MM-01","slot":"Vòng 2 - Cung A1 - Ô 4","status":"Đã an táng","area":3.3,"y":-0.02,"rot":135.37,"cx":-11.59,"cz":-9.76,"poly":[[-10.28,-10.0],[-11.85,-8.45],[-12.9,-9.52],[-11.33,-11.07],[-10.28,-10.0]],"person":{"id":"NM-A006","name":"Đặng Thanh Tâm","dob":"21/10/1945","dod":"21/10/2023","burial":"23/10/2023","kin":"Đặng Minh Mai - 0910620595"}},{"id":"A-007","zone":"PK-A","model":"MM-01","slot":"Vòng 3 - Cung A1 - Ô 1","status":"Đã đặt trước","area":3.3,"y":1.0,"rot":167.2,"cx":-4.54,"cz":-1.51,"poly":[[-3.3,-1.02],[-5.45,-0.54],[-5.78,-2.0],[-3.63,-2.48],[-3.3,-1.02]]},{"id":"A-008","zone":"PK-A","model":"MM-01","slot":"Vòng 3 - Cung A1 - Ô 2","status":"Trống","area":3.3,"y":0.64,"rot":158.6,"cx":-7.48,"cz":-2.41,"poly":[[-6.18,-2.11],[-8.23,-1.31],[-8.78,-2.71],[-6.73,-3.51],[-6.18,-2.11]]},{"id":"A-009","zone":"PK-A","model":"MM-01","slot":"Vòng 3 - Cung A1 - Ô 3","status":"Đã an táng","area":3.3,"y":0.3,"rot":150.0,"cx":-10.25,"cz":-3.75,"poly":[[-8.92,-3.65],[-10.83,-2.55],[-11.58,-3.85],[-9.67,-4.95],[-8.92,-3.65]],"person":{"id":"NM-A009","name":"Nguyễn Quốc Thảo","dob":"24/01/1948","dod":"24/01/2018","burial":"26/01/2018","kin":"Nguyễn Minh Quân - 0910661968"}},{"id":"A-010","zone":"PK-A","model":"MM-01","slot":"Vòng 3 - Cung A1 - Ô 4","status":"Trống","area":3.3,"y":-0.01,"rot":141.4,"cx":-12.79,"cz":-5.48,"poly":[[-11.46,-5.58],[-13.18,-4.21],[-14.12,-5.38],[-12.4,-6.75],[-11.46,-5.58]]},{"id":"A-011","zone":"PK-A","model":"MM-01","slot":"Vòng 3 - Cung A1 - Ô 5","status":"Đã an táng","area":3.3,"y":-0.29,"rot":132.81,"cx":-15.04,"cz":-7.57,"poly":[[-13.74,-7.87],[-15.24,-6.25],[-16.34,-7.27],[-14.84,-8.89],[-13.74,-7.87]],"person":{"id":"NM-A011","name":"Lê Văn Mai","dob":"01/03/1950","dod":"01/03/2020","burial":"03/03/2020","kin":"Lê Minh Tâm - 0910689550"}},{"id":"A-012","zone":"PK-A","model":"MM-01","slot":"Vòng 4 - Cung A1 - Ô 1","status":"Đã an táng","area":3.3,"y":1.03,"rot":170.56,"cx":-4.84,"cz":7.6,"poly":[[-3.63,8.16],[-5.8,8.52],[-6.05,7.04],[-3.88,6.68],[-3.63,8.16]],"person":{"id":"NM-A012","name":"Phạm Hữu Tuấn","dob":"02/04/1951","dod":"02/04/2021","burial":"04/04/2021","kin":"Phạm Minh Thảo - 0910703341"}},{"id":"A-013","zone":"PK-A","model":"MM-01","slot":"Vòng 4 - Cung A1 - Ô 2","status":"Đã đặt trước","area":3.3,"y":0.69,"rot":164.69,"cx":-7.79,"cz":6.95,"poly":[[-6.53,7.38],[-8.65,7.96],[-9.05,6.52],[-6.93,5.94],[-6.53,7.38]]},{"id":"A-014","zone":"PK-A","model":"MM-01","slot":"Vòng 4 - Cung A1 - Ô 3","status":"Trống","area":3.3,"y":0.37,"rot":158.82,"cx":-10.66,"cz":6.01,"poly":[[-9.36,6.31],[-11.41,7.11],[-11.96,5.71],[-9.9,4.91],[-9.36,6.31]]},{"id":"A-015","zone":"PK-A","model":"MM-01","slot":"Vòng 4 - Cung A1 - Ô 4","status":"Đã an táng","area":3.3,"y":0.08,"rot":152.94,"cx":-13.42,"cz":4.77,"poly":[[-12.1,4.94],[-14.06,5.94],[-14.74,4.6],[-12.78,3.6],[-12.1,4.94]],"person":{"id":"NM-A015","name":"Phan Minh Vinh","dob":"05/07/1954","dod":"05/07/2024","burial":"07/07/2024","kin":"Phan Minh Yến - 0910744714"}},{"id":"A-016","zone":"PK-A","model":"MM-01","slot":"Vòng 4 - Cung A1 - Ô 5","status":"Trống","area":3.3,"y":-0.18,"rot":147.06,"cx":-16.04,"cz":3.26,"poly":[[-14.71,3.29],[-16.55,4.49],[-17.37,3.23],[-15.53,2.03],[-14.71,3.29]]},{"id":"A-017","zone":"PK-A","model":"MM-01","slot":"Vòng 4 - Cung A1 - Ô 6","status":"Đã an táng","area":3.3,"y":-0.41,"rot":141.19,"cx":-18.49,"cz":1.49,"poly":[[-17.16,1.39],[-18.88,2.76],[-19.82,1.59],[-18.1,0.22],[-17.16,1.39]],"person":{"id":"NM-A017","name":"Võ Đức Phúc","dob":"07/09/1956","dod":"07/09/2018","burial":"09/09/2018","kin":"Võ Minh Bình - 0910772296"}},{"id":"A-018","zone":"PK-A","model":"MM-01","slot":"Vòng 4 - Cung A1 - Ô 7","status":"Đã an táng","area":3.3,"y":-0.62,"rot":135.3,"cx":-20.75,"cz":-0.53,"poly":[[-19.44,-0.77],[-21.0,0.78],[-22.06,-0.29],[-20.5,-1.84],[-19.44,-0.77]],"person":{"id":"NM-A018","name":"Đặng Thị Yến","dob":"08/10/1957","dod":"08/10/2019","burial":"10/10/2019","kin":"Đặng Minh Cường - 0910786087"}},{"id":"A-019","zone":"PK-A","model":"MM-01","slot":"Vòng 4 - Cung A1 - Ô 8","status":"Đã an táng","area":3.3,"y":-0.8,"rot":129.44,"cx":-22.78,"cz":-2.76,"poly":[[-21.5,-3.13],[-22.9,-1.43],[-24.06,-2.39],[-22.66,-4.09],[-21.5,-3.13]],"person":{"id":"NM-A019","name":"Bùi Quốc Hòa","dob":"09/11/1958","dod":"09/11/2020","burial":"11/11/2020","kin":"Bùi Minh Dũng - 0910799878"}},{"id":"A-020","zone":"PK-A","model":"MM-01","slot":"Vòng 5 - Cung A1 - Ô 1","status":"Trống","area":3.3,"y":0.99,"rot":171.61,"cx":-4.89,"cz":11.64,"poly":[[-3.69,12.22],[-5.87,12.54],[-6.09,11.06],[-3.91,10.74],[-3.69,12.22]]},{"id":"A-021","zone":"PK-A","model":"MM-01","slot":"Vòng 5 - Cung A1 - Ô 2","status":"Đã an táng","area":3.3,"y":0.68,"rot":166.8,"cx":-7.65,"cz":11.11,"poly":[[-6.41,11.59],[-8.55,12.09],[-8.89,10.63],[-6.75,10.13],[-6.41,11.59]],"person":{"id":"NM-A021","name":"Nguyễn Văn An","dob":"11/01/1960","dod":"11/01/2022","burial":"13/01/2022","kin":"Nguyễn Minh Hải - 0910827460"}},{"id":"A-022","zone":"PK-A","model":"MM-01","slot":"Vòng 5 - Cung A1 - Ô 3","status":"Trống","area":3.3,"y":0.39,"rot":162.0,"cx":-10.35,"cz":10.36,"poly":[[-9.07,10.73],[-11.16,11.41],[-11.63,9.99],[-9.54,9.31],[-9.07,10.73]]},{"id":"A-023","zone":"PK-A","model":"MM-01","slot":"Vòng 5 - Cung A1 - Ô 4","status":"Đã an táng","area":3.3,"y":0.12,"rot":157.2,"cx":-12.98,"cz":9.38,"poly":[[-11.68,9.64],[-13.7,10.5],[-14.29,9.12],[-12.26,8.26],[-11.68,9.64]],"person":{"id":"NM-A023","name":"Lê Ngọc Sơn","dob":"13/03/1962","dod":"13/03/2024","burial":"15/03/2024","kin":"Lê Minh Hùng - 0910855042"}},{"id":"A-024","zone":"PK-A","model":"MM-01","slot":"Vòng 5 - Cung A1 - Ô 5","status":"Đã an táng","area":3.3,"y":-0.12,"rot":152.4,"cx":-15.52,"cz":8.19,"poly":[[-14.2,8.35],[-16.15,9.36],[-16.84,8.04],[-14.89,7.02],[-14.2,8.35]],"person":{"id":"NM-A024","name":"Phạm Anh Bình","dob":"14/04/1963","dod":"14/04/2025","burial":"16/04/2025","kin":"Phạm Minh Lan - 0910868833"}},{"id":"A-025","zone":"PK-A","model":"MM-01","slot":"Vòng 5 - Cung A1 - Ô 6","status":"Đã an táng","area":3.3,"y":-0.34,"rot":147.6,"cx":-17.95,"cz":6.78,"poly":[[-16.62,6.82],[-18.48,8.0],[-19.28,6.74],[-17.42,5.56],[-16.62,6.82]],"person":{"id":"NM-A025","name":"Hoàng Minh Lan","dob":"15/05/1964","dod":"15/05/2018","burial":"17/05/2018","kin":"Hoàng Minh Linh - 0910882624"}},{"id":"A-026","zone":"PK-A","model":"MM-01","slot":"Vòng 5 - Cung A1 - Ô 7","status":"Đã đặt trước","area":3.3,"y":-0.53,"rot":142.8,"cx":-20.25,"cz":5.18,"poly":[[-18.92,5.11],[-20.67,6.44],[-21.58,5.25],[-19.83,3.92],[-18.92,5.11]]},{"id":"A-027","zone":"PK-A","model":"MM-01","slot":"Vòng 5 - Cung A1 - Ô 8","status":"Trống","area":3.3,"y":-0.7,"rot":138.0,"cx":-22.42,"cz":3.4,"poly":[[-21.1,3.22],[-22.74,4.69],[-23.74,3.58],[-22.1,2.11],[-21.1,3.22]]},{"id":"A-028","zone":"PK-A","model":"MM-01","slot":"Vòng 5 - Cung A1 - Ô 9","status":"Đã an táng","area":3.3,"y":-0.84,"rot":133.2,"cx":-24.42,"cz":1.43,"poly":[[-23.12,1.14],[-24.63,2.75],[-25.72,1.72],[-24.21,0.12],[-23.12,1.14]],"person":{"id":"NM-A028","name":"Vũ Thị Linh","dob":"18/08/1967","dod":"18/08/2021","burial":"20/08/2021","kin":"Vũ Minh Phúc - 0910923997"}},{"id":"A-029","zone":"PK-A","model":"MM-01","slot":"Vòng 5 - Cung A1 - Ô 10","status":"Trống","area":3.3,"y":-0.97,"rot":128.41,"cx":-26.25,"cz":-0.69,"poly":[[-24.98,-1.09],[-26.35,0.64],[-27.52,-0.29],[-26.15,-2.02],[-24.98,-1.09]]},{"id":"A-030","zone":"PK-A","model":"MM-01","slot":"Vòng 6 - Cung A1 - Ô 1","status":"Đã an táng","area":3.3,"y":0.91,"rot":172.28,"cx":-5.04,"cz":15.66,"poly":[[-3.85,16.25],[-6.03,16.55],[-6.23,15.06],[-4.05,14.77],[-3.85,16.25]],"person":{"id":"NM-A030","name":"Đặng Hoàng Dũng","dob":"20/10/1969","dod":"20/10/2023","burial":"22/10/2023","kin":"Đặng Minh Sơn - 0910951579"}},{"id":"A-031","zone":"PK-A","model":"MM-01","slot":"Vòng 6 - Cung A1 - Ô 2","status":"Đã an táng","area":3.3,"y":0.59,"rot":167.82,"cx":-7.91,"cz":15.16,"poly":[[-6.68,15.66],[-8.83,16.12],[-9.14,14.66],[-6.99,14.2],[-6.68,15.66]],"person":{"id":"NM-A031","name":"Bùi Văn Mai","dob":"21/11/1935","dod":"21/11/2024","burial":"23/11/2024","kin":"Bùi Minh Tâm - 0910965370"}},{"id":"A-032","zone":"PK-A","model":"MM-01","slot":"Vòng 6 - Cung A1 - Ô 3","status":"Đã đặt trước","area":3.3,"y":0.29,"rot":163.36,"cx":-10.74,"cz":14.43,"poly":[[-9.47,14.83],[-11.58,15.46],[-12.01,14.03],[-9.9,13.4],[-9.47,14.83]]},{"id":"A-033","zone":"PK-A","model":"MM-01","slot":"Vòng 6 - Cung A1 - Ô 4","status":"Trống","area":3.3,"y":0.02,"rot":158.92,"cx":-13.49,"cz":13.49,"poly":[[-12.19,13.79],[-14.25,14.59],[-14.79,13.19],[-12.73,12.39],[-12.19,13.79]]},{"id":"A-034","zone":"PK-A","model":"MM-01","slot":"Vòng 6 - Cung A1 - Ô 5","status":"Đã an táng","area":3.3,"y":-0.22,"rot":154.45,"cx":-16.17,"cz":12.33,"poly":[[-14.85,12.53],[-16.84,13.48],[-17.49,12.13],[-15.5,11.18],[-14.85,12.53]],"person":{"id":"NM-A034","name":"Trần Anh Nam","dob":"24/02/1938","dod":"24/02/2019","burial":"26/02/2019","kin":"Trần Minh Vinh - 0911006743"}},{"id":"A-035","zone":"PK-A","model":"MM-01","slot":"Vòng 6 - Cung A1 - Ô 6","status":"Trống","area":3.3,"y":-0.43,"rot":150.0,"cx":-18.75,"cz":10.98,"poly":[[-17.42,11.08],[-19.33,12.18],[-20.08,10.88],[-18.17,9.78],[-17.42,11.08]]},{"id":"A-036","zone":"PK-A","model":"MM-01","slot":"Vòng 6 - Cung A1 - Ô 7","status":"Đã an táng","area":3.3,"y":-0.61,"rot":145.54,"cx":-21.22,"cz":9.42,"poly":[[-19.89,9.42],[-21.7,10.66],[-22.55,9.42],[-20.74,8.18],[-19.89,9.42]],"person":{"id":"NM-A036","name":"Phạm Thanh Hải","dob":"01/04/1940","dod":"01/04/2021","burial":"03/04/2021","kin":"Phạm Minh An - 0911034325"}},{"id":"A-037","zone":"PK-A","model":"MM-01","slot":"Vòng 6 - Cung A1 - Ô 8","status":"Đã an táng","area":3.3,"y":-0.77,"rot":141.09,"cx":-23.55,"cz":7.68,"poly":[[-22.22,7.57],[-23.93,8.96],[-24.88,7.79],[-23.16,6.41],[-22.22,7.57]],"person":{"id":"NM-A037","name":"Hoàng Đức Phúc","dob":"02/05/1941","dod":"02/05/2022","burial":"04/05/2022","kin":"Hoàng Minh Bình - 0911048116"}},{"id":"A-038","zone":"PK-A","model":"MM-01","slot":"Vòng 6 - Cung A1 - Ô 9","status":"Đã an táng","area":3.3,"y":-0.89,"rot":136.63,"cx":-25.75,"cz":5.76,"poly":[[-24.43,5.55],[-26.04,7.06],[-27.07,5.97],[-25.46,4.46],[-24.43,5.55]],"person":{"id":"NM-A038","name":"Huỳnh Thị Yến","dob":"03/06/1942","dod":"03/06/2023","burial":"05/06/2023","kin":"Huỳnh Minh Cường - 0911061907"}},{"id":"A-039","zone":"PK-A","model":"MM-01","slot":"Vòng 6 - Cung A1 - Ô 10","status":"Đã đặt trước","area":3.3,"y":-1.0,"rot":132.18,"cx":-27.79,"cz":3.68,"poly":[[-26.5,3.37],[-27.97,5.0],[-29.08,3.99],[-27.61,2.36],[-26.5,3.37]]},{"id":"A-040","zone":"PK-A","model":"MM-01","slot":"Vòng 6 - Cung A1 - Ô 11","status":"Trống","area":3.3,"y":-1.1,"rot":127.73,"cx":-29.66,"cz":1.45,"poly":[[-28.39,1.04],[-29.74,2.78],[-30.93,1.86],[-29.58,0.12],[-28.39,1.04]]},{"id":"A-041","zone":"PK-A","model":"MM-01","slot":"Vòng 1 - Cung A2 - Ô 1","status":"Đã an táng","area":3.3,"y":-0.58,"rot":98.51,"cx":-12.36,"cz":-19.65,"poly":[[-11.46,-20.63],[-11.78,-18.45],[-13.27,-18.67],[-12.94,-20.85],[-11.46,-20.63]],"person":{"id":"NM-A041","name":"Võ Văn An","dob":"06/09/1945","dod":"06/09/2018","burial":"08/09/2018","kin":"Võ Minh Hải - 0911103280"}},{"id":"A-042","zone":"PK-A","model":"MM-01","slot":"Vòng 1 - Cung A2 - Ô 2","status":"Đã an táng","area":3.3,"y":-0.81,"rot":81.49,"cx":-12.36,"cz":-23.35,"poly":[[-11.78,-24.55],[-11.46,-22.37],[-12.94,-22.15],[-13.27,-24.33],[-11.78,-24.55]],"person":{"id":"NM-A042","name":"Đặng Hữu Hùng","dob":"07/10/1946","dod":"07/10/2019","burial":"09/10/2019","kin":"Đặng Minh Hòa - 0911117071"}},{"id":"A-043","zone":"PK-A","model":"MM-01","slot":"Vòng 2 - Cung A2 - Ô 1","status":"Đã đặt trước","area":3.3,"y":-0.8,"rot":104.63,"cx":-15.97,"cz":-17.33,"poly":[[-14.97,-18.2],[-15.52,-16.08],[-16.97,-16.45],[-16.42,-18.58],[-14.97,-18.2]]},{"id":"A-044","zone":"PK-A","model":"MM-01","slot":"Vòng 2 - Cung A2 - Ô 2","status":"Trống","area":3.3,"y":-1.0,"rot":94.87,"cx":-16.44,"cz":-20.1,"poly":[[-15.6,-21.13],[-15.79,-18.94],[-17.28,-19.07],[-17.09,-21.26],[-15.6,-21.13]]},{"id":"A-045","zone":"PK-A","model":"MM-01","slot":"Vòng 2 - Cung A2 - Ô 3","status":"Đã an táng","area":3.3,"y":-1.18,"rot":85.13,"cx":-16.44,"cz":-22.9,"poly":[[-15.79,-24.06],[-15.6,-21.87],[-17.09,-21.74],[-17.28,-23.93],[-15.79,-24.06]],"person":{"id":"NM-A045","name":"Nguyễn Minh Lan","dob":"10/01/1949","dod":"10/01/2022","burial":"12/01/2022","kin":"Nguyễn Minh Linh - 0911158444"}},{"id":"A-046","zone":"PK-A","model":"MM-01","slot":"Vòng 2 - Cung A2 - Ô 4","status":"Trống","area":3.3,"y":-1.32,"rot":75.37,"cx":-15.97,"cz":-25.67,"poly":[[-15.52,-26.92],[-14.97,-24.8],[-16.42,-24.42],[-16.97,-26.55],[-15.52,-26.92]]},{"id":"A-047","zone":"PK-A","model":"MM-01","slot":"Vòng 3 - Cung A2 - Ô 1","status":"Đã an táng","area":3.3,"y":-1.02,"rot":107.2,"cx":-19.58,"cz":-15.44,"poly":[[-18.54,-16.27],[-19.19,-14.17],[-20.62,-14.61],[-19.97,-16.71],[-18.54,-16.27]],"person":{"id":"NM-A047","name":"Lê Đức Cường","dob":"12/03/1951","dod":"12/03/2024","burial":"14/03/2024","kin":"Lê Minh Nam - 0911186026"}},{"id":"A-048","zone":"PK-A","model":"MM-01","slot":"Vòng 3 - Cung A2 - Ô 2","status":"Đã an táng","area":3.3,"y":-1.23,"rot":98.61,"cx":-20.27,"cz":-18.43,"poly":[[-19.36,-19.41],[-19.69,-17.23],[-21.18,-17.45],[-20.85,-19.63],[-19.36,-19.41]],"person":{"id":"NM-A048","name":"Phạm Thị Linh","dob":"13/04/1952","dod":"13/04/2025","burial":"15/04/2025","kin":"Phạm Minh Phúc - 0911199817"}},{"id":"A-049","zone":"PK-A","model":"MM-01","slot":"Vòng 3 - Cung A2 - Ô 3","status":"Đã đặt trước","area":3.3,"y":-1.43,"rot":90.0,"cx":-20.5,"cz":-21.5,"poly":[[-19.75,-22.6],[-19.75,-20.4],[-21.25,-20.4],[-21.25,-22.6],[-19.75,-22.6]]},{"id":"A-050","zone":"PK-A","model":"MM-01","slot":"Vòng 3 - Cung A2 - Ô 4","status":"Trống","area":3.3,"y":-1.61,"rot":81.39,"cx":-20.27,"cz":-24.57,"poly":[[-19.69,-25.77],[-19.36,-23.59],[-20.85,-23.37],[-21.18,-25.55],[-19.69,-25.77]]},{"id":"A-051","zone":"PK-A","model":"MM-01","slot":"Vòng 3 - Cung A2 - Ô 5","status":"Đã an táng","area":3.3,"y":-1.77,"rot":72.8,"cx":-19.58,"cz":-27.56,"poly":[[-19.19,-28.83],[-18.54,-26.73],[-19.97,-26.29],[-20.62,-28.39],[-19.19,-28.83]],"person":{"id":"NM-A051","name":"Phan Văn Mai","dob":"16/07/1955","dod":"16/07/2020","burial":"18/07/2020","kin":"Phan Minh Tâm - 0911241190"}},{"id":"A-052","zone":"PK-A","model":"MM-01","slot":"Vòng 4 - Cung A2 - Ô 1","status":"Đã an táng","area":3.3,"y":-1.34,"rot":110.56,"cx":-27.62,"cz":-11.14,"poly":[[-26.53,-11.91],[-27.3,-9.85],[-28.71,-10.37],[-27.94,-12.43],[-26.53,-11.91]],"person":{"id":"NM-A052","name":"Vũ Hữu Tuấn","dob":"17/08/1956","dod":"17/08/2021","burial":"19/08/2021","kin":"Vũ Minh Thảo - 0911254981"}},{"id":"A-053","zone":"PK-A","model":"MM-01","slot":"Vòng 4 - Cung A2 - Ô 2","status":"Đã an táng","area":3.3,"y":-1.51,"rot":104.69,"cx":-28.54,"cz":-14.02,"poly":[[-27.54,-14.89],[-28.09,-12.77],[-29.54,-13.15],[-28.99,-15.27],[-27.54,-14.89]],"person":{"id":"NM-A053","name":"Võ Ngọc Hà","dob":"18/09/1957","dod":"18/09/2022","burial":"20/09/2022","kin":"Võ Minh Tuấn - 0911268772"}},{"id":"A-054","zone":"PK-A","model":"MM-01","slot":"Vòng 4 - Cung A2 - Ô 3","status":"Đã an táng","area":3.3,"y":-1.68,"rot":98.81,"cx":-29.15,"cz":-16.98,"poly":[[-28.24,-17.95],[-28.58,-15.78],[-30.06,-16.01],[-29.72,-18.18],[-28.24,-17.95]],"person":{"id":"NM-A054","name":"Đặng Anh Nam","dob":"19/10/1958","dod":"19/10/2023","burial":"21/10/2023","kin":"Đặng Minh Vinh - 0911282563"}},{"id":"A-055","zone":"PK-A","model":"MM-01","slot":"Vòng 4 - Cung A2 - Ô 4","status":"Đã đặt trước","area":3.3,"y":-1.86,"rot":92.93,"cx":-29.46,"cz":-19.99,"poly":[[-28.66,-21.05],[-28.77,-18.85],[-30.27,-18.93],[-30.15,-21.13],[-28.66,-21.05]]},{"id":"A-056","zone":"PK-A","model":"MM-01","slot":"Vòng 4 - Cung A2 - Ô 5","status":"Trống","area":3.3,"y":-2.05,"rot":87.07,"cx":-29.46,"cz":-23.01,"poly":[[-28.77,-24.15],[-28.66,-21.95],[-30.15,-21.87],[-30.27,-24.07],[-28.77,-24.15]]},{"id":"A-057","zone":"PK-A","model":"MM-01","slot":"Vòng 4 - Cung A2 - Ô 6","status":"Đã an táng","area":3.3,"y":-2.24,"rot":81.19,"cx":-29.15,"cz":-26.02,"poly":[[-28.58,-27.22],[-28.24,-25.05],[-29.72,-24.82],[-30.06,-26.99],[-28.58,-27.22]],"person":{"id":"NM-A057","name":"Nguyễn Đức Phúc","dob":"22/01/1961","dod":"22/01/2018","burial":"24/01/2018","kin":"Nguyễn Minh Bình - 0911323936"}},{"id":"A-058","zone":"PK-A","model":"MM-01","slot":"Vòng 4 - Cung A2 - Ô 7","status":"Trống","area":3.3,"y":-2.42,"rot":75.31,"cx":-28.54,"cz":-28.98,"poly":[[-28.09,-30.23],[-27.54,-28.11],[-28.99,-27.73],[-29.54,-29.85],[-28.09,-30.23]]},{"id":"A-059","zone":"PK-A","model":"MM-01","slot":"Vòng 4 - Cung A2 - Ô 8","status":"Đã an táng","area":3.3,"y":-2.6,"rot":69.44,"cx":-27.62,"cz":-31.86,"poly":[[-27.3,-33.15],[-26.53,-31.09],[-27.94,-30.57],[-28.71,-32.63],[-27.3,-33.15]],"person":{"id":"NM-A059","name":"Lê Quốc Hòa","dob":"24/03/1963","dod":"24/03/2020","burial":"26/03/2020","kin":"Lê Minh Dũng - 0911351518"}},{"id":"A-060","zone":"PK-A","model":"MM-01","slot":"Vòng 5 - Cung A2 - Ô 1","status":"Đã an táng","area":3.3,"y":-1.4,"rot":111.59,"cx":-31.15,"cz":-9.17,"poly":[[-30.05,-9.92],[-30.86,-7.87],[-32.25,-8.42],[-31.44,-10.47],[-30.05,-9.92]],"person":{"id":"NM-A060","name":"Phạm Hoàng Quân","dob":"25/04/1964","dod":"25/04/2021","burial":"27/04/2021","kin":"Phạm Minh Hà - 0911365309"}},{"id":"A-061","zone":"PK-A","model":"MM-01","slot":"Vòng 5 - Cung A2 - Ô 2","status":"Đã đặt trước","area":3.3,"y":-1.53,"rot":106.8,"cx":-32.07,"cz":-11.82,"poly":[[-31.03,-12.66],[-31.67,-10.55],[-33.11,-10.98],[-32.47,-13.09],[-31.03,-12.66]]},{"id":"A-062","zone":"PK-A","model":"MM-01","slot":"Vòng 5 - Cung A2 - Ô 3","status":"Trống","area":3.3,"y":-1.67,"rot":102.01,"cx":-32.77,"cz":-14.53,"poly":[[-31.81,-15.45],[-32.27,-13.3],[-33.73,-13.61],[-33.27,-15.76],[-31.81,-15.45]]},{"id":"A-063","zone":"PK-A","model":"MM-01","slot":"Vòng 5 - Cung A2 - Ô 4","status":"Đã an táng","area":3.3,"y":-1.82,"rot":97.2,"cx":-33.24,"cz":-17.3,"poly":[[-32.36,-18.3],[-32.63,-16.11],[-34.12,-16.3],[-33.85,-18.48],[-32.36,-18.3]],"person":{"id":"NM-A063","name":"Phan Ngọc Sơn","dob":"03/07/1967","dod":"03/07/2024","burial":"05/07/2024","kin":"Phan Minh Hùng - 0911406682"}},{"id":"A-064","zone":"PK-A","model":"MM-01","slot":"Vòng 5 - Cung A2 - Ô 5","status":"Trống","area":3.3,"y":-1.99,"rot":92.4,"cx":-33.47,"cz":-20.1,"poly":[[-32.67,-21.17],[-32.77,-18.97],[-34.27,-19.03],[-34.17,-21.23],[-32.67,-21.17]]},{"id":"A-065","zone":"PK-A","model":"MM-01","slot":"Vòng 5 - Cung A2 - Ô 6","status":"Đã an táng","area":3.3,"y":-2.16,"rot":87.6,"cx":-33.47,"cz":-22.9,"poly":[[-32.77,-24.03],[-32.67,-21.83],[-34.17,-21.77],[-34.27,-23.97],[-32.77,-24.03]],"person":{"id":"NM-A065","name":"Võ Minh Lan","dob":"05/09/1969","dod":"05/09/2018","burial":"07/09/2018","kin":"Võ Minh Linh - 0911434264"}},{"id":"A-066","zone":"PK-A","model":"MM-01","slot":"Vòng 5 - Cung A2 - Ô 7","status":"Đã an táng","area":3.3,"y":-2.34,"rot":82.8,"cx":-33.24,"cz":-25.7,"poly":[[-32.63,-26.89],[-32.36,-24.7],[-33.85,-24.52],[-34.12,-26.7],[-32.63,-26.89]],"person":{"id":"NM-A066","name":"Đặng Thanh Tâm","dob":"06/10/1935","dod":"06/10/2019","burial":"08/10/2019","kin":"Đặng Minh Mai - 0911448055"}},{"id":"A-067","zone":"PK-A","model":"MM-01","slot":"Vòng 5 - Cung A2 - Ô 8","status":"Đã an táng","area":3.3,"y":-2.53,"rot":77.99,"cx":-32.77,"cz":-28.47,"poly":[[-32.27,-29.7],[-31.81,-27.55],[-33.27,-27.24],[-33.73,-29.39],[-32.27,-29.7]],"person":{"id":"NM-A067","name":"Bùi Đức Cường","dob":"07/11/1936","dod":"07/11/2020","burial":"09/11/2020","kin":"Bùi Minh Nam - 0911461846"}},{"id":"A-068","zone":"PK-A","model":"MM-01","slot":"Vòng 5 - Cung A2 - Ô 9","status":"Đã đặt trước","area":3.3,"y":-2.71,"rot":73.2,"cx":-32.07,"cz":-31.18,"poly":[[-31.67,-32.45],[-31.03,-30.34],[-32.47,-29.91],[-33.11,-32.02],[-31.67,-32.45]]},{"id":"A-069","zone":"PK-A","model":"MM-01","slot":"Vòng 5 - Cung A2 - Ô 10","status":"Trống","area":3.3,"y":-2.89,"rot":68.41,"cx":-31.15,"cz":-33.83,"poly":[[-30.86,-35.13],[-30.05,-33.08],[-31.44,-32.53],[-32.25,-34.58],[-30.86,-35.13]]},{"id":"A-070","zone":"PK-A","model":"MM-01","slot":"Vòng 6 - Cung A2 - Ô 1","status":"Trống","area":3.3,"y":-1.42,"rot":112.27,"cx":-34.7,"cz":-7.29,"poly":[[-33.59,-8.02],[-34.42,-5.99],[-35.81,-6.56],[-34.98,-8.59],[-33.59,-8.02]]},{"id":"A-071","zone":"PK-A","model":"MM-01","slot":"Vòng 6 - Cung A2 - Ô 2","status":"Đã an táng","area":3.3,"y":-1.53,"rot":107.81,"cx":-35.7,"cz":-10.03,"poly":[[-34.65,-10.85],[-35.32,-8.75],[-36.75,-9.21],[-36.08,-11.31],[-34.65,-10.85]],"person":{"id":"NM-A071","name":"Lê Văn Mai","dob":"11/03/1940","dod":"11/03/2024","burial":"13/03/2024","kin":"Lê Minh Tâm - 0911517010"}},{"id":"A-072","zone":"PK-A","model":"MM-01","slot":"Vòng 6 - Cung A2 - Ô 3","status":"Đã an táng","area":3.3,"y":-1.65,"rot":103.37,"cx":-36.48,"cz":-12.83,"poly":[[-35.5,-13.73],[-36.01,-11.59],[-37.46,-11.93],[-36.95,-14.07],[-35.5,-13.73]],"person":{"id":"NM-A072","name":"Phạm Hữu Tuấn","dob":"12/04/1941","dod":"12/04/2025","burial":"14/04/2025","kin":"Phạm Minh Thảo - 0911530801"}},{"id":"A-073","zone":"PK-A","model":"MM-01","slot":"Vòng 6 - Cung A2 - Ô 4","status":"Đã an táng","area":3.3,"y":-1.79,"rot":98.91,"cx":-37.05,"cz":-15.69,"poly":[[-36.14,-16.66],[-36.48,-14.49],[-37.96,-14.72],[-37.62,-16.89],[-36.14,-16.66]],"person":{"id":"NM-A073","name":"Hoàng Ngọc Hà","dob":"13/05/1942","dod":"13/05/2018","burial":"15/05/2018","kin":"Hoàng Minh Tuấn - 0911544592"}},{"id":"A-074","zone":"PK-A","model":"MM-01","slot":"Vòng 6 - Cung A2 - Ô 5","status":"Đã đặt trước","area":3.3,"y":-1.95,"rot":94.45,"cx":-37.39,"cz":-18.59,"poly":[[-36.56,-19.63],[-36.73,-17.43],[-38.22,-17.55],[-38.05,-19.75],[-36.56,-19.63]]},{"id":"A-075","zone":"PK-A","model":"MM-01","slot":"Vòng 6 - Cung A2 - Ô 6","status":"Trống","area":3.3,"y":-2.12,"rot":90.0,"cx":-37.5,"cz":-21.5,"poly":[[-36.75,-22.6],[-36.75,-20.4],[-38.25,-20.4],[-38.25,-22.6],[-36.75,-22.6]]},{"id":"A-076","zone":"PK-A","model":"MM-01","slot":"Vòng 6 - Cung A2 - Ô 7","status":"Đã an táng","area":3.3,"y":-2.31,"rot":85.55,"cx":-37.39,"cz":-24.41,"poly":[[-36.73,-25.57],[-36.56,-23.37],[-38.05,-23.25],[-38.22,-25.45],[-36.73,-25.57]],"person":{"id":"NM-A076","name":"Vũ Thanh Hải","dob":"16/08/1945","dod":"16/08/2021","burial":"18/08/2021","kin":"Vũ Minh An - 0911585965"}},{"id":"A-077","zone":"PK-A","model":"MM-01","slot":"Vòng 6 - Cung A2 - Ô 8","status":"Trống","area":3.3,"y":-2.51,"rot":81.09,"cx":-37.05,"cz":-27.31,"poly":[[-36.48,-28.51],[-36.14,-26.34],[-37.62,-26.11],[-37.96,-28.28],[-36.48,-28.51]]},{"id":"A-078","zone":"PK-A","model":"MM-01","slot":"Vòng 6 - Cung A2 - Ô 9","status":"Đã an táng","area":3.3,"y":-2.71,"rot":76.63,"cx":-36.48,"cz":-30.17,"poly":[[-36.01,-31.41],[-35.5,-29.27],[-36.95,-28.93],[-37.46,-31.07],[-36.01,-31.41]],"person":{"id":"NM-A078","name":"Đặng Thị Yến","dob":"18/10/1947","dod":"18/10/2023","burial":"20/10/2023","kin":"Đặng Minh Cường - 0911613547"}},{"id":"A-079","zone":"PK-A","model":"MM-01","slot":"Vòng 6 - Cung A2 - Ô 10","status":"Đã an táng","area":3.3,"y":-2.92,"rot":72.19,"cx":-35.7,"cz":-32.97,"poly":[[-35.32,-34.25],[-34.65,-32.15],[-36.08,-31.69],[-36.75,-33.79],[-35.32,-34.25]],"person":{"id":"NM-A079","name":"Bùi Quốc Hòa","dob":"19/11/1948","dod":"19/11/2024","burial":"21/11/2024","kin":"Bùi Minh Dũng - 0911627338"}},{"id":"A-080","zone":"PK-A","model":"MM-01","slot":"Vòng 6 - Cung A2 - Ô 11","status":"Đã an táng","area":3.3,"y":-3.12,"rot":67.73,"cx":-34.7,"cz":-35.71,"poly":[[-34.42,-37.01],[-33.59,-34.98],[-34.98,-34.41],[-35.81,-36.44],[-34.42,-37.01]],"person":{"id":"NM-A080","name":"Đỗ Hoàng Quân","dob":"20/12/1949","dod":"20/12/2025","burial":"22/12/2025","kin":"Đỗ Minh Hà - 0911641129"}},{"id":"B-001","zone":"PK-B","model":"MM-02","slot":"Vòng 1 - Cung B1 - Ô 1","status":"Đã an táng","area":3.3,"y":-0.88,"rot":38.5,"cx":-7.78,"cz":-31.28,"poly":[[-8.17,-32.55],[-6.45,-31.18],[-7.39,-30.01],[-9.11,-31.38],[-8.17,-32.55]],"person":{"id":"NM-B001","name":"Nguyễn Văn An","dob":"21/01/1950","dod":"21/01/2018","burial":"23/01/2018","kin":"Nguyễn Minh Hải - 0911654920"}},{"id":"B-002","zone":"PK-B","model":"MM-02","slot":"Vòng 1 - Cung B1 - Ô 2","status":"Đã đặt trước","area":3.3,"y":-0.65,"rot":21.49,"cx":-4.58,"cz":-33.13,"poly":[[-5.33,-34.23],[-3.28,-33.42],[-3.83,-32.03],[-5.88,-32.84],[-5.33,-34.23]]},{"id":"B-003","zone":"PK-B","model":"MM-02","slot":"Vòng 2 - Cung B1 - Ô 1","status":"Đã an táng","area":3.3,"y":-1.44,"rot":44.63,"cx":-11.59,"cz":-33.24,"poly":[[-11.85,-34.55],[-10.28,-33.0],[-11.33,-31.93],[-12.9,-33.48],[-11.85,-34.55]],"person":{"id":"NM-B003","name":"Lê Ngọc Sơn","dob":"23/03/1952","dod":"23/03/2020","burial":"25/03/2020","kin":"Lê Minh Hùng - 0911682502"}},{"id":"B-004","zone":"PK-B","model":"MM-02","slot":"Vòng 2 - Cung B1 - Ô 2","status":"Trống","area":3.3,"y":-1.35,"rot":34.86,"cx":-9.43,"cz":-35.04,"poly":[[-9.9,-36.28],[-8.1,-35.03],[-8.96,-33.8],[-10.76,-35.05],[-9.9,-36.28]]},{"id":"B-005","zone":"PK-B","model":"MM-02","slot":"Vòng 2 - Cung B1 - Ô 3","status":"Đã an táng","area":3.3,"y":-1.19,"rot":25.14,"cx":-7.01,"cz":-36.44,"poly":[[-7.69,-37.59],[-5.7,-36.65],[-6.33,-35.29],[-8.32,-36.23],[-7.69,-37.59]],"person":{"id":"NM-B005","name":"Hoàng Minh Lan","dob":"25/05/1954","dod":"25/05/2022","burial":"27/05/2022","kin":"Hoàng Minh Linh - 0911710084"}},{"id":"B-006","zone":"PK-B","model":"MM-02","slot":"Vòng 2 - Cung B1 - Ô 4","status":"Đã an táng","area":3.3,"y":-0.97,"rot":15.36,"cx":-4.37,"cz":-37.41,"poly":[[-5.23,-38.42],[-3.11,-37.84],[-3.51,-36.4],[-5.63,-36.98],[-5.23,-38.42]],"person":{"id":"NM-B006","name":"Huỳnh Thanh Tâm","dob":"01/06/1955","dod":"01/06/2023","burial":"03/06/2023","kin":"Huỳnh Minh Mai - 0911723875"}},{"id":"B-007","zone":"PK-B","model":"MM-02","slot":"Vòng 3 - Cung B1 - Ô 1","status":"Đã đặt trước","area":3.3,"y":-1.97,"rot":47.19,"cx":-15.04,"cz":-35.43,"poly":[[-15.24,-36.75],[-13.74,-35.13],[-14.84,-34.11],[-16.34,-35.73],[-15.24,-36.75]]},{"id":"B-008","zone":"PK-B","model":"MM-02","slot":"Vòng 3 - Cung B1 - Ô 2","status":"Trống","area":3.3,"y":-1.91,"rot":38.6,"cx":-12.79,"cz":-37.52,"poly":[[-13.18,-38.79],[-11.46,-37.42],[-12.4,-36.25],[-14.12,-37.62],[-13.18,-38.79]]},{"id":"B-009","zone":"PK-B","model":"MM-02","slot":"Vòng 3 - Cung B1 - Ô 3","status":"Đã an táng","area":3.3,"y":-1.78,"rot":30.0,"cx":-10.25,"cz":-39.25,"poly":[[-10.83,-40.45],[-8.92,-39.35],[-9.67,-38.05],[-11.58,-39.15],[-10.83,-40.45]],"person":{"id":"NM-B009","name":"Võ Quốc Thảo","dob":"04/09/1958","dod":"04/09/2018","burial":"06/09/2018","kin":"Võ Minh Quân - 0911765248"}},{"id":"B-010","zone":"PK-B","model":"MM-02","slot":"Vòng 3 - Cung B1 - Ô 4","status":"Trống","area":3.3,"y":-1.59,"rot":21.4,"cx":-7.48,"cz":-40.59,"poly":[[-8.23,-41.69],[-6.18,-40.89],[-6.73,-39.49],[-8.78,-40.29],[-8.23,-41.69]]},{"id":"B-011","zone":"PK-B","model":"MM-02","slot":"Vòng 3 - Cung B1 - Ô 5","status":"Đã an táng","area":3.3,"y":-1.32,"rot":12.8,"cx":-4.54,"cz":-41.49,"poly":[[-5.45,-42.47],[-3.3,-41.98],[-3.63,-40.52],[-5.78,-41.0],[-5.45,-42.47]],"person":{"id":"NM-B011","name":"Bùi Văn Mai","dob":"06/11/1960","dod":"06/11/2020","burial":"08/11/2020","kin":"Bùi Minh Tâm - 0911792830"}},{"id":"B-012","zone":"PK-B","model":"MM-02","slot":"Vòng 4 - Cung B1 - Ô 1","status":"Đã an táng","area":3.3,"y":-2.99,"rot":50.56,"cx":-22.78,"cz":-40.24,"poly":[[-22.9,-41.57],[-21.5,-39.87],[-22.66,-38.91],[-24.06,-40.61],[-22.9,-41.57]],"person":{"id":"NM-B012","name":"Đỗ Hữu Tuấn","dob":"07/12/1961","dod":"07/12/2021","burial":"09/12/2021","kin":"Đỗ Minh Thảo - 0911806621"}},{"id":"B-013","zone":"PK-B","model":"MM-02","slot":"Vòng 4 - Cung B1 - Ô 2","status":"Đã đặt trước","area":3.3,"y":-3.03,"rot":44.7,"cx":-20.75,"cz":-42.47,"poly":[[-21.0,-43.78],[-19.44,-42.23],[-20.5,-41.16],[-22.06,-42.71],[-21.0,-43.78]]},{"id":"B-014","zone":"PK-B","model":"MM-02","slot":"Vòng 4 - Cung B1 - Ô 3","status":"Trống","area":3.3,"y":-3.02,"rot":38.81,"cx":-18.49,"cz":-44.49,"poly":[[-18.88,-45.76],[-17.16,-44.38],[-18.1,-43.22],[-19.82,-44.59],[-18.88,-45.76]]},{"id":"B-015","zone":"PK-B","model":"MM-02","slot":"Vòng 4 - Cung B1 - Ô 4","status":"Đã an táng","area":3.3,"y":-2.95,"rot":32.94,"cx":-16.04,"cz":-46.26,"poly":[[-16.55,-47.49],[-14.71,-46.29],[-15.53,-45.03],[-17.37,-46.23],[-16.55,-47.49]],"person":{"id":"NM-B015","name":"Lê Minh Vinh","dob":"10/03/1964","dod":"10/03/2024","burial":"12/03/2024","kin":"Lê Minh Yến - 0911847994"}},{"id":"B-016","zone":"PK-B","model":"MM-02","slot":"Vòng 4 - Cung B1 - Ô 5","status":"Trống","area":3.3,"y":-2.82,"rot":27.06,"cx":-13.42,"cz":-47.77,"poly":[[-14.06,-48.94],[-12.1,-47.94],[-12.78,-46.6],[-14.74,-47.6],[-14.06,-48.94]]},{"id":"B-017","zone":"PK-B","model":"MM-02","slot":"Vòng 4 - Cung B1 - Ô 6","status":"Đã an táng","area":3.3,"y":-2.63,"rot":21.18,"cx":-10.66,"cz":-49.01,"poly":[[-11.41,-50.11],[-9.36,-49.31],[-9.9,-47.91],[-11.96,-48.71],[-11.41,-50.11]],"person":{"id":"NM-B017","name":"Hoàng Đức Phúc","dob":"12/05/1966","dod":"12/05/2018","burial":"14/05/2018","kin":"Hoàng Minh Bình - 0911875576"}},{"id":"B-018","zone":"PK-B","model":"MM-02","slot":"Vòng 4 - Cung B1 - Ô 7","status":"Đã an táng","area":3.3,"y":-2.39,"rot":15.31,"cx":-7.79,"cz":-49.95,"poly":[[-8.65,-50.96],[-6.53,-50.38],[-6.93,-48.94],[-9.05,-49.52],[-8.65,-50.96]],"person":{"id":"NM-B018","name":"Huỳnh Thị Yến","dob":"13/06/1967","dod":"13/06/2019","burial":"15/06/2019","kin":"Huỳnh Minh Cường - 0911889367"}},{"id":"B-019","zone":"PK-B","model":"MM-02","slot":"Vòng 4 - Cung B1 - Ô 8","status":"Đã an táng","area":3.3,"y":-2.1,"rot":9.44,"cx":-4.84,"cz":-50.6,"poly":[[-5.8,-51.52],[-3.63,-51.16],[-3.88,-49.68],[-6.05,-50.04],[-5.8,-51.52]],"person":{"id":"NM-B019","name":"Phan Quốc Hòa","dob":"14/07/1968","dod":"14/07/2020","burial":"16/07/2020","kin":"Phan Minh Dũng - 0911903158"}},{"id":"B-020","zone":"PK-B","model":"MM-02","slot":"Vòng 5 - Cung B1 - Ô 1","status":"Trống","area":3.3,"y":-3.37,"rot":51.59,"cx":-26.25,"cz":-42.31,"poly":[[-26.35,-43.64],[-24.98,-41.91],[-26.15,-40.98],[-27.52,-42.71],[-26.35,-43.64]]},{"id":"B-021","zone":"PK-B","model":"MM-02","slot":"Vòng 5 - Cung B1 - Ô 2","status":"Đã an táng","area":3.3,"y":-3.44,"rot":46.8,"cx":-24.42,"cz":-44.43,"poly":[[-24.63,-45.74],[-23.12,-44.14],[-24.21,-43.12],[-25.72,-44.72],[-24.63,-45.74]],"person":{"id":"NM-B021","name":"Võ Văn An","dob":"16/09/1935","dod":"16/09/2022","burial":"18/09/2022","kin":"Võ Minh Hải - 0911930740"}},{"id":"B-022","zone":"PK-B","model":"MM-02","slot":"Vòng 5 - Cung B1 - Ô 3","status":"Trống","area":3.3,"y":-3.48,"rot":42.0,"cx":-22.42,"cz":-46.4,"poly":[[-22.74,-47.69],[-21.1,-46.22],[-22.1,-45.11],[-23.74,-46.58],[-22.74,-47.69]]},{"id":"B-023","zone":"PK-B","model":"MM-02","slot":"Vòng 5 - Cung B1 - Ô 4","status":"Đã an táng","area":3.3,"y":-3.46,"rot":37.2,"cx":-20.25,"cz":-48.18,"poly":[[-20.67,-49.44],[-18.92,-48.11],[-19.83,-46.92],[-21.58,-48.25],[-20.67,-49.44]],"person":{"id":"NM-B023","name":"Bùi Ngọc Sơn","dob":"18/11/1937","dod":"18/11/2024","burial":"20/11/2024","kin":"Bùi Minh Hùng - 0911958322"}},{"id":"B-024","zone":"PK-B","model":"MM-02","slot":"Vòng 5 - Cung B1 - Ô 5","status":"Đã an táng","area":3.3,"y":-3.4,"rot":32.4,"cx":-17.95,"cz":-49.78,"poly":[[-18.48,-51.0],[-16.62,-49.82],[-17.42,-48.56],[-19.28,-49.74],[-18.48,-51.0]],"person":{"id":"NM-B024","name":"Đỗ Anh Bình","dob":"19/12/1938","dod":"19/12/2025","burial":"21/12/2025","kin":"Đỗ Minh Lan - 0911972113"}},{"id":"B-025","zone":"PK-B","model":"MM-02","slot":"Vòng 5 - Cung B1 - Ô 6","status":"Đã an táng","area":3.3,"y":-3.3,"rot":27.6,"cx":-15.52,"cz":-51.19,"poly":[[-16.15,-52.36],[-14.2,-51.34],[-14.89,-50.02],[-16.84,-51.03],[-16.15,-52.36]],"person":{"id":"NM-B025","name":"Nguyễn Minh Lan","dob":"20/01/1939","dod":"20/01/2018","burial":"22/01/2018","kin":"Nguyễn Minh Linh - 0911985904"}},{"id":"B-026","zone":"PK-B","model":"MM-02","slot":"Vòng 5 - Cung B1 - Ô 7","status":"Đã đặt trước","area":3.3,"y":-3.14,"rot":22.8,"cx":-12.98,"cz":-52.38,"poly":[[-13.7,-53.5],[-11.68,-52.65],[-12.26,-51.26],[-14.29,-52.12],[-13.7,-53.5]]},{"id":"B-027","zone":"PK-B","model":"MM-02","slot":"Vòng 5 - Cung B1 - Ô 8","status":"Trống","area":3.3,"y":-2.94,"rot":18.0,"cx":-10.35,"cz":-53.36,"poly":[[-11.16,-54.41],[-9.07,-53.73],[-9.54,-52.31],[-11.63,-52.99],[-11.16,-54.41]]},{"id":"B-028","zone":"PK-B","model":"MM-02","slot":"Vòng 5 - Cung B1 - Ô 9","status":"Đã an táng","area":3.3,"y":-2.7,"rot":13.2,"cx":-7.65,"cz":-54.11,"poly":[[-8.55,-55.09],[-6.41,-54.59],[-6.75,-53.13],[-8.89,-53.63],[-8.55,-55.09]],"person":{"id":"NM-B028","name":"Phạm Thị Linh","dob":"23/04/1942","dod":"23/04/2021","burial":"25/04/2021","kin":"Phạm Minh Phúc - 0912027277"}},{"id":"B-029","zone":"PK-B","model":"MM-02","slot":"Vòng 5 - Cung B1 - Ô 10","status":"Trống","area":3.3,"y":-2.42,"rot":8.39,"cx":-4.89,"cz":-54.64,"poly":[[-5.87,-55.54],[-3.69,-55.22],[-3.91,-53.74],[-6.09,-54.06],[-5.87,-55.54]]},{"id":"B-030","zone":"PK-B","model":"MM-02","slot":"Vòng 6 - Cung B1 - Ô 1","status":"Đã an táng","area":3.3,"y":-3.7,"rot":52.27,"cx":-29.66,"cz":-44.45,"poly":[[-29.74,-45.78],[-28.39,-44.04],[-29.58,-43.12],[-30.93,-44.86],[-29.74,-45.78]],"person":{"id":"NM-B030","name":"Huỳnh Hoàng Dũng","dob":"25/06/1944","dod":"25/06/2023","burial":"27/06/2023","kin":"Huỳnh Minh Sơn - 0912054859"}},{"id":"B-031","zone":"PK-B","model":"MM-02","slot":"Vòng 6 - Cung B1 - Ô 2","status":"Đã an táng","area":3.3,"y":-3.81,"rot":47.82,"cx":-27.79,"cz":-46.68,"poly":[[-27.97,-48.0],[-26.5,-46.37],[-27.61,-45.36],[-29.08,-46.99],[-27.97,-48.0]],"person":{"id":"NM-B031","name":"Phan Văn Mai","dob":"01/07/1945","dod":"01/07/2024","burial":"03/07/2024","kin":"Phan Minh Tâm - 0912068650"}},{"id":"B-032","zone":"PK-B","model":"MM-02","slot":"Vòng 6 - Cung B1 - Ô 3","status":"Đã đặt trước","area":3.3,"y":-3.88,"rot":43.37,"cx":-25.75,"cz":-48.76,"poly":[[-26.04,-50.06],[-24.43,-48.55],[-25.46,-47.46],[-27.07,-48.97],[-26.04,-50.06]]},{"id":"B-033","zone":"PK-B","model":"MM-02","slot":"Vòng 6 - Cung B1 - Ô 4","status":"Trống","area":3.3,"y":-3.9,"rot":38.91,"cx":-23.55,"cz":-50.68,"poly":[[-23.93,-51.95],[-22.22,-50.57],[-23.16,-49.41],[-24.88,-50.79],[-23.93,-51.95]]},{"id":"B-034","zone":"PK-B","model":"MM-02","slot":"Vòng 6 - Cung B1 - Ô 5","status":"Đã an táng","area":3.3,"y":-3.87,"rot":34.46,"cx":-21.22,"cz":-52.42,"poly":[[-21.7,-53.66],[-19.89,-52.42],[-20.74,-51.18],[-22.55,-52.42],[-21.7,-53.66]],"person":{"id":"NM-B034","name":"Đặng Anh Nam","dob":"04/10/1948","dod":"04/10/2019","burial":"06/10/2019","kin":"Đặng Minh Vinh - 0912110023"}},{"id":"B-035","zone":"PK-B","model":"MM-02","slot":"Vòng 6 - Cung B1 - Ô 6","status":"Trống","area":3.3,"y":-3.8,"rot":30.0,"cx":-18.75,"cz":-53.98,"poly":[[-19.33,-55.18],[-17.42,-54.08],[-18.17,-52.78],[-20.08,-53.88],[-19.33,-55.18]]},{"id":"B-036","zone":"PK-B","model":"MM-02","slot":"Vòng 6 - Cung B1 - Ô 7","status":"Đã an táng","area":3.3,"y":-3.68,"rot":25.55,"cx":-16.17,"cz":-55.33,"poly":[[-16.84,-56.48],[-14.85,-55.53],[-15.5,-54.18],[-17.49,-55.13],[-16.84,-56.48]],"person":{"id":"NM-B036","name":"Đỗ Thanh Hải","dob":"06/12/1950","dod":"06/12/2021","burial":"08/12/2021","kin":"Đỗ Minh An - 0912137605"}},{"id":"B-037","zone":"PK-B","model":"MM-02","slot":"Vòng 6 - Cung B1 - Ô 8","status":"Đã an táng","area":3.3,"y":-3.5,"rot":21.08,"cx":-13.49,"cz":-56.49,"poly":[[-14.25,-57.59],[-12.19,-56.79],[-12.73,-55.4],[-14.79,-56.19],[-14.25,-57.59]],"person":{"id":"NM-B037","name":"Nguyễn Đức Phúc","dob":"07/01/1951","dod":"07/01/2022","burial":"09/01/2022","kin":"Nguyễn Minh Bình - 0912151396"}},{"id":"B-038","zone":"PK-B","model":"MM-02","slot":"Vòng 6 - Cung B1 - Ô 9","status":"Đã an táng","area":3.3,"y":-3.29,"rot":16.64,"cx":-10.74,"cz":-57.43,"poly":[[-11.58,-58.46],[-9.47,-57.83],[-9.9,-56.4],[-12.01,-57.03],[-11.58,-58.46]],"person":{"id":"NM-B038","name":"Trần Thị Yến","dob":"08/02/1952","dod":"08/02/2023","burial":"10/02/2023","kin":"Trần Minh Cường - 0912165187"}},{"id":"B-039","zone":"PK-B","model":"MM-02","slot":"Vòng 6 - Cung B1 - Ô 10","status":"Đã đặt trước","area":3.3,"y":-3.03,"rot":12.18,"cx":-7.91,"cz":-58.16,"poly":[[-8.83,-59.12],[-6.68,-58.66],[-6.99,-57.2],[-9.14,-57.66],[-8.83,-59.12]]},{"id":"B-040","zone":"PK-B","model":"MM-02","slot":"Vòng 6 - Cung B1 - Ô 11","status":"Trống","area":3.3,"y":-2.73,"rot":7.72,"cx":-5.04,"cz":-58.66,"poly":[[-6.03,-59.55],[-3.85,-59.26],[-4.05,-57.77],[-6.23,-58.06],[-6.03,-59.55]]},{"id":"B-041","zone":"PK-B","model":"MM-02","slot":"Vòng 1 - Cung B2 - Ô 1","status":"Đã an táng","area":3.3,"y":0.44,"rot":338.51,"cx":4.58,"cz":-33.13,"poly":[[3.28,-33.42],[5.33,-34.23],[5.88,-32.84],[3.83,-32.03],[3.28,-33.42]],"person":{"id":"NM-B041","name":"Hoàng Văn An","dob":"11/05/1955","dod":"11/05/2018","burial":"13/05/2018","kin":"Hoàng Minh Hải - 0912206560"}},{"id":"B-042","zone":"PK-B","model":"MM-02","slot":"Vòng 1 - Cung B2 - Ô 2","status":"Đã an táng","area":3.3,"y":0.96,"rot":321.5,"cx":7.78,"cz":-31.28,"poly":[[6.45,-31.18],[8.17,-32.55],[9.11,-31.38],[7.39,-30.01],[6.45,-31.18]],"person":{"id":"NM-B042","name":"Huỳnh Hữu Hùng","dob":"12/06/1956","dod":"12/06/2019","burial":"14/06/2019","kin":"Huỳnh Minh Hòa - 0912220351"}},{"id":"B-043","zone":"PK-B","model":"MM-02","slot":"Vòng 2 - Cung B2 - Ô 1","status":"Đã đặt trước","area":3.3,"y":0.08,"rot":344.64,"cx":4.37,"cz":-37.41,"poly":[[3.11,-37.84],[5.23,-38.42],[5.63,-36.98],[3.51,-36.4],[3.11,-37.84]]},{"id":"B-044","zone":"PK-B","model":"MM-02","slot":"Vòng 2 - Cung B2 - Ô 2","status":"Trống","area":3.3,"y":0.46,"rot":334.86,"cx":7.01,"cz":-36.44,"poly":[[5.7,-36.65],[7.69,-37.59],[8.32,-36.23],[6.33,-35.29],[5.7,-36.65]]},{"id":"B-045","zone":"PK-B","model":"MM-02","slot":"Vòng 2 - Cung B2 - Ô 3","status":"Đã an táng","area":3.3,"y":0.85,"rot":325.14,"cx":9.43,"cz":-35.04,"poly":[[8.1,-35.03],[9.9,-36.28],[10.76,-35.05],[8.96,-33.8],[8.1,-35.03]],"person":{"id":"NM-B045","name":"Võ Minh Lan","dob":"15/09/1959","dod":"15/09/2022","burial":"17/09/2022","kin":"Võ Minh Linh - 0912261724"}},{"id":"B-046","zone":"PK-B","model":"MM-02","slot":"Vòng 2 - Cung B2 - Ô 4","status":"Trống","area":3.3,"y":1.22,"rot":315.37,"cx":11.59,"cz":-33.24,"poly":[[10.28,-33.0],[11.85,-34.55],[12.9,-33.48],[11.33,-31.93],[10.28,-33.0]]},{"id":"B-047","zone":"PK-B","model":"MM-02","slot":"Vòng 3 - Cung B2 - Ô 1","status":"Đã an táng","area":3.3,"y":-0.24,"rot":347.2,"cx":4.54,"cz":-41.49,"poly":[[3.3,-41.98],[5.45,-42.47],[5.78,-41.0],[3.63,-40.52],[3.3,-41.98]],"person":{"id":"NM-B047","name":"Bùi Đức Cường","dob":"17/11/1961","dod":"17/11/2024","burial":"19/11/2024","kin":"Bùi Minh Nam - 0912289306"}},{"id":"B-048","zone":"PK-B","model":"MM-02","slot":"Vòng 3 - Cung B2 - Ô 2","status":"Đã an táng","area":3.3,"y":0.18,"rot":338.6,"cx":7.48,"cz":-40.59,"poly":[[6.18,-40.89],[8.23,-41.69],[8.78,-40.29],[6.73,-39.49],[6.18,-40.89]],"person":{"id":"NM-B048","name":"Đỗ Thị Linh","dob":"18/12/1962","dod":"18/12/2025","burial":"20/12/2025","kin":"Đỗ Minh Phúc - 0912303097"}},{"id":"B-049","zone":"PK-B","model":"MM-02","slot":"Vòng 3 - Cung B2 - Ô 3","status":"Đã đặt trước","area":3.3,"y":0.6,"rot":330.0,"cx":10.25,"cz":-39.25,"poly":[[8.92,-39.35],[10.83,-40.45],[11.58,-39.15],[9.67,-38.05],[8.92,-39.35]]},{"id":"B-050","zone":"PK-B","model":"MM-02","slot":"Vòng 3 - Cung B2 - Ô 4","status":"Trống","area":3.3,"y":1.01,"rot":321.4,"cx":12.79,"cz":-37.52,"poly":[[11.46,-37.42],[13.18,-38.79],[14.12,-37.62],[12.4,-36.25],[11.46,-37.42]]},{"id":"B-051","zone":"PK-B","model":"MM-02","slot":"Vòng 3 - Cung B2 - Ô 5","status":"Đã an táng","area":3.3,"y":1.4,"rot":312.81,"cx":15.04,"cz":-35.43,"poly":[[13.74,-35.13],[15.24,-36.75],[16.34,-35.73],[14.84,-34.11],[13.74,-35.13]],"person":{"id":"NM-B051","name":"Lê Văn Mai","dob":"21/03/1965","dod":"21/03/2020","burial":"23/03/2020","kin":"Lê Minh Tâm - 0912344470"}},{"id":"B-052","zone":"PK-B","model":"MM-02","slot":"Vòng 4 - Cung B2 - Ô 1","status":"Đã an táng","area":3.3,"y":-0.95,"rot":350.56,"cx":4.84,"cz":-50.6,"poly":[[3.63,-51.16],[5.8,-51.52],[6.05,-50.04],[3.88,-49.68],[3.63,-51.16]],"person":{"id":"NM-B052","name":"Phạm Hữu Tuấn","dob":"22/04/1966","dod":"22/04/2021","burial":"24/04/2021","kin":"Phạm Minh Thảo - 0912358261"}},{"id":"B-053","zone":"PK-B","model":"MM-02","slot":"Vòng 4 - Cung B2 - Ô 2","status":"Đã an táng","area":3.3,"y":-0.55,"rot":344.69,"cx":7.79,"cz":-49.95,"poly":[[6.53,-50.38],[8.65,-50.96],[9.05,-49.52],[6.93,-48.94],[6.53,-50.38]],"person":{"id":"NM-B053","name":"Hoàng Ngọc Hà","dob":"23/05/1967","dod":"23/05/2022","burial":"25/05/2022","kin":"Hoàng Minh Tuấn - 0912372052"}},{"id":"B-054","zone":"PK-B","model":"MM-02","slot":"Vòng 4 - Cung B2 - Ô 3","status":"Đã an táng","area":3.3,"y":-0.16,"rot":338.82,"cx":10.66,"cz":-49.01,"poly":[[9.36,-49.31],[11.41,-50.11],[11.96,-48.71],[9.9,-47.91],[9.36,-49.31]],"person":{"id":"NM-B054","name":"Huỳnh Anh Nam","dob":"24/06/1968","dod":"24/06/2023","burial":"26/06/2023","kin":"Huỳnh Minh Vinh - 0912385843"}},{"id":"B-055","zone":"PK-B","model":"MM-02","slot":"Vòng 4 - Cung B2 - Ô 4","status":"Đã đặt trước","area":3.3,"y":0.23,"rot":332.94,"cx":13.42,"cz":-47.77,"poly":[[12.1,-47.94],[14.06,-48.94],[14.74,-47.6],[12.78,-46.6],[12.1,-47.94]]},{"id":"B-056","zone":"PK-B","model":"MM-02","slot":"Vòng 4 - Cung B2 - Ô 5","status":"Trống","area":3.3,"y":0.6,"rot":327.06,"cx":16.04,"cz":-46.26,"poly":[[14.71,-46.29],[16.55,-47.49],[17.37,-46.23],[15.53,-45.03],[14.71,-46.29]]},{"id":"B-057","zone":"PK-B","model":"MM-02","slot":"Vòng 4 - Cung B2 - Ô 6","status":"Đã an táng","area":3.3,"y":0.97,"rot":321.19,"cx":18.49,"cz":-44.49,"poly":[[17.16,-44.38],[18.88,-45.76],[19.82,-44.59],[18.1,-43.22],[17.16,-44.38]],"person":{"id":"NM-B057","name":"Võ Đức Phúc","dob":"02/09/1936","dod":"02/09/2018","burial":"04/09/2018","kin":"Võ Minh Bình - 0912427216"}},{"id":"B-058","zone":"PK-B","model":"MM-02","slot":"Vòng 4 - Cung B2 - Ô 7","status":"Trống","area":3.3,"y":1.31,"rot":315.3,"cx":20.75,"cz":-42.47,"poly":[[19.44,-42.23],[21.0,-43.78],[22.06,-42.71],[20.5,-41.16],[19.44,-42.23]]},{"id":"B-059","zone":"PK-B","model":"MM-02","slot":"Vòng 4 - Cung B2 - Ô 8","status":"Đã an táng","area":3.3,"y":1.64,"rot":309.44,"cx":22.78,"cz":-40.24,"poly":[[21.5,-39.87],[22.9,-41.57],[24.06,-40.61],[22.66,-38.91],[21.5,-39.87]],"person":{"id":"NM-B059","name":"Bùi Quốc Hòa","dob":"04/11/1938","dod":"04/11/2020","burial":"06/11/2020","kin":"Bùi Minh Dũng - 0912454798"}},{"id":"B-060","zone":"PK-B","model":"MM-02","slot":"Vòng 5 - Cung B2 - Ô 1","status":"Đã an táng","area":3.3,"y":-1.25,"rot":351.61,"cx":4.89,"cz":-54.64,"poly":[[3.69,-55.22],[5.87,-55.54],[6.09,-54.06],[3.91,-53.74],[3.69,-55.22]],"person":{"id":"NM-B060","name":"Đỗ Hoàng Quân","dob":"05/12/1939","dod":"05/12/2021","burial":"07/12/2021","kin":"Đỗ Minh Hà - 0912468589"}},{"id":"B-061","zone":"PK-B","model":"MM-02","slot":"Vòng 5 - Cung B2 - Ô 2","status":"Đã đặt trước","area":3.3,"y":-0.89,"rot":346.8,"cx":7.65,"cz":-54.11,"poly":[[6.41,-54.59],[8.55,-55.09],[8.89,-53.63],[6.75,-53.13],[6.41,-54.59]]},{"id":"B-062","zone":"PK-B","model":"MM-02","slot":"Vòng 5 - Cung B2 - Ô 3","status":"Trống","area":3.3,"y":-0.54,"rot":342.0,"cx":10.35,"cz":-53.36,"poly":[[9.07,-53.73],[11.16,-54.41],[11.63,-52.99],[9.54,-52.31],[9.07,-53.73]]},{"id":"B-063","zone":"PK-B","model":"MM-02","slot":"Vòng 5 - Cung B2 - Ô 4","status":"Đã an táng","area":3.3,"y":-0.19,"rot":337.2,"cx":12.98,"cz":-52.38,"poly":[[11.68,-52.65],[13.7,-53.5],[14.29,-52.12],[12.26,-51.26],[11.68,-52.65]],"person":{"id":"NM-B063","name":"Lê Ngọc Sơn","dob":"08/03/1942","dod":"08/03/2024","burial":"10/03/2024","kin":"Lê Minh Hùng - 0912509962"}},{"id":"B-064","zone":"PK-B","model":"MM-02","slot":"Vòng 5 - Cung B2 - Ô 5","status":"Trống","area":3.3,"y":0.16,"rot":332.4,"cx":15.52,"cz":-51.19,"poly":[[14.2,-51.34],[16.15,-52.36],[16.84,-51.03],[14.89,-50.02],[14.2,-51.34]]},{"id":"B-065","zone":"PK-B","model":"MM-02","slot":"Vòng 5 - Cung B2 - Ô 6","status":"Đã an táng","area":3.3,"y":0.49,"rot":327.6,"cx":17.95,"cz":-49.78,"poly":[[16.62,-49.82],[18.48,-51.0],[19.28,-49.74],[17.42,-48.56],[16.62,-49.82]],"person":{"id":"NM-B065","name":"Hoàng Minh Lan","dob":"10/05/1944","dod":"10/05/2018","burial":"12/05/2018","kin":"Hoàng Minh Linh - 0912537544"}},{"id":"B-066","zone":"PK-B","model":"MM-02","slot":"Vòng 5 - Cung B2 - Ô 7","status":"Đã an táng","area":3.3,"y":0.81,"rot":322.8,"cx":20.25,"cz":-48.18,"poly":[[18.92,-48.11],[20.67,-49.44],[21.58,-48.25],[19.83,-46.92],[18.92,-48.11]],"person":{"id":"NM-B066","name":"Huỳnh Thanh Tâm","dob":"11/06/1945","dod":"11/06/2019","burial":"13/06/2019","kin":"Huỳnh Minh Mai - 0912551335"}},{"id":"B-067","zone":"PK-B","model":"MM-02","slot":"Vòng 5 - Cung B2 - Ô 8","status":"Đã an táng","area":3.3,"y":1.11,"rot":318.0,"cx":22.42,"cz":-46.4,"poly":[[21.1,-46.22],[22.74,-47.69],[23.74,-46.58],[22.1,-45.11],[21.1,-46.22]],"person":{"id":"NM-B067","name":"Phan Đức Cường","dob":"12/07/1946","dod":"12/07/2020","burial":"14/07/2020","kin":"Phan Minh Nam - 0912565126"}},{"id":"B-068","zone":"PK-B","model":"MM-02","slot":"Vòng 5 - Cung B2 - Ô 9","status":"Đã đặt trước","area":3.3,"y":1.4,"rot":313.2,"cx":24.42,"cz":-44.43,"poly":[[23.12,-44.14],[24.63,-45.74],[25.72,-44.72],[24.21,-43.12],[23.12,-44.14]]},{"id":"B-069","zone":"PK-B","model":"MM-02","slot":"Vòng 5 - Cung B2 - Ô 10","status":"Trống","area":3.3,"y":1.68,"rot":308.41,"cx":26.25,"cz":-42.31,"poly":[[24.98,-41.91],[26.35,-43.64],[27.52,-42.71],[26.15,-40.98],[24.98,-41.91]]},{"id":"B-070","zone":"PK-B","model":"MM-02","slot":"Vòng 6 - Cung B2 - Ô 1","status":"Trống","area":3.3,"y":-1.53,"rot":352.28,"cx":5.04,"cz":-58.66,"poly":[[3.85,-59.26],[6.03,-59.55],[6.23,-58.06],[4.05,-57.77],[3.85,-59.26]]},{"id":"B-071","zone":"PK-B","model":"MM-02","slot":"Vòng 6 - Cung B2 - Ô 2","status":"Đã an táng","area":3.3,"y":-1.17,"rot":347.82,"cx":7.91,"cz":-58.16,"poly":[[6.68,-58.66],[8.83,-59.12],[9.14,-57.66],[6.99,-57.2],[6.68,-58.66]],"person":{"id":"NM-B071","name":"Bùi Văn Mai","dob":"16/11/1950","dod":"16/11/2024","burial":"18/11/2024","kin":"Bùi Minh Tâm - 0912620290"}},{"id":"B-072","zone":"PK-B","model":"MM-02","slot":"Vòng 6 - Cung B2 - Ô 3","status":"Đã an táng","area":3.3,"y":-0.8,"rot":343.36,"cx":10.74,"cz":-57.43,"poly":[[9.47,-57.83],[11.58,-58.46],[12.01,-57.03],[9.9,-56.4],[9.47,-57.83]],"person":{"id":"NM-B072","name":"Đỗ Hữu Tuấn","dob":"17/12/1951","dod":"17/12/2025","burial":"19/12/2025","kin":"Đỗ Minh Thảo - 0912634081"}},{"id":"B-073","zone":"PK-B","model":"MM-02","slot":"Vòng 6 - Cung B2 - Ô 4","status":"Đã an táng","area":3.3,"y":-0.45,"rot":338.92,"cx":13.49,"cz":-56.49,"poly":[[12.19,-56.79],[14.25,-57.59],[14.79,-56.19],[12.73,-55.4],[12.19,-56.79]],"person":{"id":"NM-B073","name":"Nguyễn Ngọc Hà","dob":"18/01/1952","dod":"18/01/2018","burial":"20/01/2018","kin":"Nguyễn Minh Tuấn - 0912647872"}},{"id":"B-074","zone":"PK-B","model":"MM-02","slot":"Vòng 6 - Cung B2 - Ô 5","status":"Đã đặt trước","area":3.3,"y":-0.1,"rot":334.45,"cx":16.17,"cz":-55.33,"poly":[[14.85,-55.53],[16.84,-56.48],[17.49,-55.13],[15.5,-54.18],[14.85,-55.53]]},{"id":"B-075","zone":"PK-B","model":"MM-02","slot":"Vòng 6 - Cung B2 - Ô 6","status":"Trống","area":3.3,"y":0.23,"rot":330.0,"cx":18.75,"cz":-53.98,"poly":[[17.42,-54.08],[19.33,-55.18],[20.08,-53.88],[18.17,-52.78],[17.42,-54.08]]},{"id":"B-076","zone":"PK-B","model":"MM-02","slot":"Vòng 6 - Cung B2 - Ô 7","status":"Đã an táng","area":3.3,"y":0.54,"rot":325.54,"cx":21.22,"cz":-52.42,"poly":[[19.89,-52.42],[21.7,-53.66],[22.55,-52.42],[20.74,-51.18],[19.89,-52.42]],"person":{"id":"NM-B076","name":"Phạm Thanh Hải","dob":"21/04/1955","dod":"21/04/2021","burial":"23/04/2021","kin":"Phạm Minh An - 0912689245"}},{"id":"B-077","zone":"PK-B","model":"MM-02","slot":"Vòng 6 - Cung B2 - Ô 8","status":"Trống","area":3.3,"y":0.84,"rot":321.09,"cx":23.55,"cz":-50.68,"poly":[[22.22,-50.57],[23.93,-51.95],[24.88,-50.79],[23.16,-49.41],[22.22,-50.57]]},{"id":"B-078","zone":"PK-B","model":"MM-02","slot":"Vòng 6 - Cung B2 - Ô 9","status":"Đã an táng","area":3.3,"y":1.13,"rot":316.63,"cx":25.75,"cz":-48.76,"poly":[[24.43,-48.55],[26.04,-50.06],[27.07,-48.97],[25.46,-47.46],[24.43,-48.55]],"person":{"id":"NM-B078","name":"Huỳnh Thị Yến","dob":"23/06/1957","dod":"23/06/2023","burial":"25/06/2023","kin":"Huỳnh Minh Cường - 0912716827"}},{"id":"B-079","zone":"PK-B","model":"MM-02","slot":"Vòng 6 - Cung B2 - Ô 10","status":"Đã an táng","area":3.3,"y":1.4,"rot":312.18,"cx":27.79,"cz":-46.68,"poly":[[26.5,-46.37],[27.97,-48.0],[29.08,-46.99],[27.61,-45.36],[26.5,-46.37]],"person":{"id":"NM-B079","name":"Phan Quốc Hòa","dob":"24/07/1958","dod":"24/07/2024","burial":"26/07/2024","kin":"Phan Minh Dũng - 0912730618"}},{"id":"B-080","zone":"PK-B","model":"MM-02","slot":"Vòng 6 - Cung B2 - Ô 11","status":"Đã an táng","area":3.3,"y":1.66,"rot":307.73,"cx":29.66,"cz":-44.45,"poly":[[28.39,-44.04],[29.74,-45.78],[30.93,-44.86],[29.58,-43.12],[28.39,-44.04]],"person":{"id":"NM-B080","name":"Vũ Hoàng Quân","dob":"25/08/1959","dod":"25/08/2025","burial":"27/08/2025","kin":"Vũ Minh Hà - 0912744409"}},{"id":"C-041","zone":"PK-C","model":"MM-03","slot":"Vòng 1 - Cung C2 - Ô 1","status":"Đã an táng","area":3.3,"y":2.02,"rot":278.51,"cx":12.36,"cz":-23.35,"poly":[[11.46,-22.37],[11.78,-24.55],[13.27,-24.33],[12.94,-22.15],[11.46,-22.37]],"person":{"id":"NM-C041","name":"Võ Văn An","dob":"01/09/1960","dod":"01/09/2018","burial":"03/09/2018","kin":"Võ Minh Hải - 0912758200"}},{"id":"C-042","zone":"PK-C","model":"MM-03","slot":"Vòng 1 - Cung C2 - Ô 2","status":"Đã an táng","area":3.3,"y":2.25,"rot":261.49,"cx":12.36,"cz":-19.65,"poly":[[11.78,-18.45],[11.46,-20.63],[12.94,-20.85],[13.27,-18.67],[11.78,-18.45]],"person":{"id":"NM-C042","name":"Đặng Hữu Hùng","dob":"02/10/1961","dod":"02/10/2019","burial":"04/10/2019","kin":"Đặng Minh Hòa - 0912771991"}},{"id":"C-043","zone":"PK-C","model":"MM-03","slot":"Vòng 2 - Cung C2 - Ô 1","status":"Đã đặt trước","area":3.3,"y":2.22,"rot":284.63,"cx":15.97,"cz":-25.67,"poly":[[14.97,-24.8],[15.52,-26.92],[16.97,-26.55],[16.42,-24.42],[14.97,-24.8]]},{"id":"C-044","zone":"PK-C","model":"MM-03","slot":"Vòng 2 - Cung C2 - Ô 2","status":"Trống","area":3.3,"y":2.45,"rot":274.87,"cx":16.44,"cz":-22.9,"poly":[[15.6,-21.87],[15.79,-24.06],[17.28,-23.93],[17.09,-21.74],[15.6,-21.87]]},{"id":"C-045","zone":"PK-C","model":"MM-03","slot":"Vòng 2 - Cung C2 - Ô 3","status":"Đã an táng","area":3.3,"y":2.62,"rot":265.13,"cx":16.44,"cz":-20.1,"poly":[[15.79,-18.94],[15.6,-21.13],[17.09,-21.26],[17.28,-19.07],[15.79,-18.94]],"person":{"id":"NM-C045","name":"Nguyễn Minh Lan","dob":"05/01/1964","dod":"05/01/2022","burial":"07/01/2022","kin":"Nguyễn Minh Linh - 0912813364"}},{"id":"C-046","zone":"PK-C","model":"MM-03","slot":"Vòng 2 - Cung C2 - Ô 4","status":"Trống","area":3.3,"y":2.73,"rot":255.37,"cx":15.97,"cz":-17.33,"poly":[[15.52,-16.08],[14.97,-18.2],[16.42,-18.58],[16.97,-16.45],[15.52,-16.08]]},{"id":"C-047","zone":"PK-C","model":"MM-03","slot":"Vòng 3 - Cung C2 - Ô 1","status":"Đã an táng","area":3.3,"y":2.4,"rot":287.2,"cx":19.58,"cz":-27.56,"poly":[[18.54,-26.73],[19.19,-28.83],[20.62,-28.39],[19.97,-26.29],[18.54,-26.73]],"person":{"id":"NM-C047","name":"Lê Đức Cường","dob":"07/03/1966","dod":"07/03/2024","burial":"09/03/2024","kin":"Lê Minh Nam - 0912840946"}},{"id":"C-048","zone":"PK-C","model":"MM-03","slot":"Vòng 3 - Cung C2 - Ô 2","status":"Đã an táng","area":3.3,"y":2.66,"rot":278.61,"cx":20.27,"cz":-24.57,"poly":[[19.36,-23.59],[19.69,-25.77],[21.18,-25.55],[20.85,-23.37],[19.36,-23.59]],"person":{"id":"NM-C048","name":"Phạm Thị Linh","dob":"08/04/1967","dod":"08/04/2025","burial":"10/04/2025","kin":"Phạm Minh Phúc - 0912854737"}},{"id":"C-049","zone":"PK-C","model":"MM-03","slot":"Vòng 3 - Cung C2 - Ô 3","status":"Đã đặt trước","area":3.3,"y":2.88,"rot":270.0,"cx":20.5,"cz":-21.5,"poly":[[19.75,-20.4],[19.75,-22.6],[21.25,-22.6],[21.25,-20.4],[19.75,-20.4]]},{"id":"C-050","zone":"PK-C","model":"MM-03","slot":"Vòng 3 - Cung C2 - Ô 4","status":"Trống","area":3.3,"y":3.04,"rot":261.39,"cx":20.27,"cz":-18.43,"poly":[[19.69,-17.23],[19.36,-19.41],[20.85,-19.63],[21.18,-17.45],[19.69,-17.23]]},{"id":"C-051","zone":"PK-C","model":"MM-03","slot":"Vòng 3 - Cung C2 - Ô 5","status":"Đã an táng","area":3.3,"y":3.14,"rot":252.8,"cx":19.58,"cz":-15.44,"poly":[[19.19,-14.17],[18.54,-16.27],[19.97,-16.71],[20.62,-14.61],[19.19,-14.17]],"person":{"id":"NM-C051","name":"Phan Văn Mai","dob":"11/07/1935","dod":"11/07/2020","burial":"13/07/2020","kin":"Phan Minh Tâm - 0912896110"}},{"id":"C-052","zone":"PK-C","model":"MM-03","slot":"Vòng 4 - Cung C2 - Ô 1","status":"Đã an táng","area":3.3,"y":2.59,"rot":290.56,"cx":27.62,"cz":-31.86,"poly":[[26.53,-31.09],[27.3,-33.15],[28.71,-32.63],[27.94,-30.57],[26.53,-31.09]],"person":{"id":"NM-C052","name":"Vũ Hữu Tuấn","dob":"12/08/1936","dod":"12/08/2021","burial":"14/08/2021","kin":"Vũ Minh Thảo - 0912909901"}},{"id":"C-053","zone":"PK-C","model":"MM-03","slot":"Vòng 4 - Cung C2 - Ô 2","status":"Đã an táng","area":3.3,"y":2.85,"rot":284.69,"cx":28.54,"cz":-28.98,"poly":[[27.54,-28.11],[28.09,-30.23],[29.54,-29.85],[28.99,-27.73],[27.54,-28.11]],"person":{"id":"NM-C053","name":"Võ Ngọc Hà","dob":"13/09/1937","dod":"13/09/2022","burial":"15/09/2022","kin":"Võ Minh Tuấn - 0912923692"}},{"id":"C-054","zone":"PK-C","model":"MM-03","slot":"Vòng 4 - Cung C2 - Ô 3","status":"Đã an táng","area":3.3,"y":3.09,"rot":278.81,"cx":29.15,"cz":-26.02,"poly":[[28.24,-25.05],[28.58,-27.22],[30.06,-26.99],[29.72,-24.82],[28.24,-25.05]],"person":{"id":"NM-C054","name":"Đặng Anh Nam","dob":"14/10/1938","dod":"14/10/2023","burial":"16/10/2023","kin":"Đặng Minh Vinh - 0912937483"}},{"id":"C-055","zone":"PK-C","model":"MM-03","slot":"Vòng 4 - Cung C2 - Ô 4","status":"Đã đặt trước","area":3.3,"y":3.3,"rot":272.93,"cx":29.46,"cz":-23.01,"poly":[[28.66,-21.95],[28.77,-24.15],[30.27,-24.07],[30.15,-21.87],[28.66,-21.95]]},{"id":"C-056","zone":"PK-C","model":"MM-03","slot":"Vòng 4 - Cung C2 - Ô 5","status":"Trống","area":3.3,"y":3.49,"rot":267.07,"cx":29.46,"cz":-19.99,"poly":[[28.77,-18.85],[28.66,-21.05],[30.15,-21.13],[30.27,-18.93],[28.77,-18.85]]},{"id":"C-057","zone":"PK-C","model":"MM-03","slot":"Vòng 4 - Cung C2 - Ô 6","status":"Đã an táng","area":3.3,"y":3.65,"rot":261.19,"cx":29.15,"cz":-16.98,"poly":[[28.58,-15.78],[28.24,-17.95],[29.72,-18.18],[30.06,-16.01],[28.58,-15.78]],"person":{"id":"NM-C057","name":"Nguyễn Đức Phúc","dob":"17/01/1941","dod":"17/01/2018","burial":"19/01/2018","kin":"Nguyễn Minh Bình - 0912978856"}},{"id":"C-058","zone":"PK-C","model":"MM-03","slot":"Vòng 4 - Cung C2 - Ô 7","status":"Trống","area":3.3,"y":3.77,"rot":255.31,"cx":28.54,"cz":-14.02,"poly":[[28.09,-12.77],[27.54,-14.89],[28.99,-15.27],[29.54,-13.15],[28.09,-12.77]]},{"id":"C-059","zone":"PK-C","model":"MM-03","slot":"Vòng 4 - Cung C2 - Ô 8","status":"Đã an táng","area":3.3,"y":3.85,"rot":249.44,"cx":27.62,"cz":-11.14,"poly":[[27.3,-9.85],[26.53,-11.91],[27.94,-12.43],[28.71,-10.37],[27.3,-9.85]],"person":{"id":"NM-C059","name":"Lê Quốc Hòa","dob":"19/03/1943","dod":"19/03/2020","burial":"21/03/2020","kin":"Lê Minh Dũng - 0913006438"}},{"id":"C-060","zone":"PK-C","model":"MM-03","slot":"Vòng 5 - Cung C2 - Ô 1","status":"Đã an táng","area":3.3,"y":2.58,"rot":291.59,"cx":31.15,"cz":-33.83,"poly":[[30.05,-33.08],[30.86,-35.13],[32.25,-34.58],[31.44,-32.53],[30.05,-33.08]],"person":{"id":"NM-C060","name":"Phạm Hoàng Quân","dob":"20/04/1944","dod":"20/04/2021","burial":"22/04/2021","kin":"Phạm Minh Hà - 0913020229"}},{"id":"C-061","zone":"PK-C","model":"MM-03","slot":"Vòng 5 - Cung C2 - Ô 2","status":"Đã đặt trước","area":3.3,"y":2.81,"rot":286.8,"cx":32.07,"cz":-31.18,"poly":[[31.03,-30.34],[31.67,-32.45],[33.11,-32.02],[32.47,-29.91],[31.03,-30.34]]},{"id":"C-062","zone":"PK-C","model":"MM-03","slot":"Vòng 5 - Cung C2 - Ô 3","status":"Trống","area":3.3,"y":3.03,"rot":282.01,"cx":32.77,"cz":-28.47,"poly":[[31.81,-27.55],[32.27,-29.7],[33.73,-29.39],[33.27,-27.24],[31.81,-27.55]]},{"id":"C-063","zone":"PK-C","model":"MM-03","slot":"Vòng 5 - Cung C2 - Ô 4","status":"Đã an táng","area":3.3,"y":3.24,"rot":277.2,"cx":33.24,"cz":-25.7,"poly":[[32.36,-24.7],[32.63,-26.89],[34.12,-26.7],[33.85,-24.52],[32.36,-24.7]],"person":{"id":"NM-C063","name":"Phan Ngọc Sơn","dob":"23/07/1947","dod":"23/07/2024","burial":"25/07/2024","kin":"Phan Minh Hùng - 0913061602"}},{"id":"C-064","zone":"PK-C","model":"MM-03","slot":"Vòng 5 - Cung C2 - Ô 5","status":"Trống","area":3.3,"y":3.43,"rot":272.4,"cx":33.47,"cz":-22.9,"poly":[[32.67,-21.83],[32.77,-24.03],[34.27,-23.97],[34.17,-21.77],[32.67,-21.83]]},{"id":"C-065","zone":"PK-C","model":"MM-03","slot":"Vòng 5 - Cung C2 - Ô 6","status":"Đã an táng","area":3.3,"y":3.6,"rot":267.6,"cx":33.47,"cz":-20.1,"poly":[[32.77,-18.97],[32.67,-21.17],[34.17,-21.23],[34.27,-19.03],[32.77,-18.97]],"person":{"id":"NM-C065","name":"Võ Minh Lan","dob":"25/09/1949","dod":"25/09/2018","burial":"27/09/2018","kin":"Võ Minh Linh - 0913089184"}},{"id":"C-066","zone":"PK-C","model":"MM-03","slot":"Vòng 5 - Cung C2 - Ô 7","status":"Đã an táng","area":3.3,"y":3.76,"rot":262.8,"cx":33.24,"cz":-17.3,"poly":[[32.63,-16.11],[32.36,-18.3],[33.85,-18.48],[34.12,-16.3],[32.63,-16.11]],"person":{"id":"NM-C066","name":"Đặng Thanh Tâm","dob":"01/10/1950","dod":"01/10/2019","burial":"03/10/2019","kin":"Đặng Minh Mai - 0913102975"}},{"id":"C-067","zone":"PK-C","model":"MM-03","slot":"Vòng 5 - Cung C2 - Ô 8","status":"Đã an táng","area":3.3,"y":3.89,"rot":257.99,"cx":32.77,"cz":-14.53,"poly":[[32.27,-13.3],[31.81,-15.45],[33.27,-15.76],[33.73,-13.61],[32.27,-13.3]],"person":{"id":"NM-C067","name":"Bùi Đức Cường","dob":"02/11/1951","dod":"02/11/2020","burial":"04/11/2020","kin":"Bùi Minh Nam - 0913116766"}},{"id":"C-068","zone":"PK-C","model":"MM-03","slot":"Vòng 5 - Cung C2 - Ô 9","status":"Đã đặt trước","area":3.3,"y":3.99,"rot":253.2,"cx":32.07,"cz":-11.82,"poly":[[31.67,-10.55],[31.03,-12.66],[32.47,-13.09],[33.11,-10.98],[31.67,-10.55]]},{"id":"C-069","zone":"PK-C","model":"MM-03","slot":"Vòng 5 - Cung C2 - Ô 10","status":"Trống","area":3.3,"y":4.07,"rot":248.41,"cx":31.15,"cz":-9.17,"poly":[[30.86,-7.87],[30.05,-9.92],[31.44,-10.47],[32.25,-8.42],[30.86,-7.87]]},{"id":"C-070","zone":"PK-C","model":"MM-03","slot":"Vòng 6 - Cung C2 - Ô 1","status":"Trống","area":3.3,"y":2.51,"rot":292.27,"cx":34.7,"cz":-35.71,"poly":[[33.59,-34.98],[34.42,-37.01],[35.81,-36.44],[34.98,-34.41],[33.59,-34.98]]},{"id":"C-071","zone":"PK-C","model":"MM-03","slot":"Vòng 6 - Cung C2 - Ô 2","status":"Đã an táng","area":3.3,"y":2.74,"rot":287.81,"cx":35.7,"cz":-32.97,"poly":[[34.65,-32.15],[35.32,-34.25],[36.75,-33.79],[36.08,-31.69],[34.65,-32.15]],"person":{"id":"NM-C071","name":"Lê Văn Mai","dob":"06/03/1955","dod":"06/03/2024","burial":"08/03/2024","kin":"Lê Minh Tâm - 0913171930"}},{"id":"C-072","zone":"PK-C","model":"MM-03","slot":"Vòng 6 - Cung C2 - Ô 3","status":"Đã an táng","area":3.3,"y":2.96,"rot":283.37,"cx":36.48,"cz":-30.17,"poly":[[35.5,-29.27],[36.01,-31.41],[37.46,-31.07],[36.95,-28.93],[35.5,-29.27]],"person":{"id":"NM-C072","name":"Phạm Hữu Tuấn","dob":"07/04/1956","dod":"07/04/2025","burial":"09/04/2025","kin":"Phạm Minh Thảo - 0913185721"}},{"id":"C-073","zone":"PK-C","model":"MM-03","slot":"Vòng 6 - Cung C2 - Ô 4","status":"Đã an táng","area":3.3,"y":3.17,"rot":278.91,"cx":37.05,"cz":-27.31,"poly":[[36.14,-26.34],[36.48,-28.51],[37.96,-28.28],[37.62,-26.11],[36.14,-26.34]],"person":{"id":"NM-C073","name":"Hoàng Ngọc Hà","dob":"08/05/1957","dod":"08/05/2018","burial":"10/05/2018","kin":"Hoàng Minh Tuấn - 0913199512"}},{"id":"C-074","zone":"PK-C","model":"MM-03","slot":"Vòng 6 - Cung C2 - Ô 5","status":"Đã đặt trước","area":3.3,"y":3.38,"rot":274.45,"cx":37.39,"cz":-24.41,"poly":[[36.56,-23.37],[36.73,-25.57],[38.22,-25.45],[38.05,-23.25],[36.56,-23.37]]},{"id":"C-075","zone":"PK-C","model":"MM-03","slot":"Vòng 6 - Cung C2 - Ô 6","status":"Trống","area":3.3,"y":3.57,"rot":270.0,"cx":37.5,"cz":-21.5,"poly":[[36.75,-20.4],[36.75,-22.6],[38.25,-22.6],[38.25,-20.4],[36.75,-20.4]]},{"id":"C-076","zone":"PK-C","model":"MM-03","slot":"Vòng 6 - Cung C2 - Ô 7","status":"Đã an táng","area":3.3,"y":3.74,"rot":265.55,"cx":37.39,"cz":-18.59,"poly":[[36.73,-17.43],[36.56,-19.63],[38.05,-19.75],[38.22,-17.55],[36.73,-17.43]],"person":{"id":"NM-C076","name":"Vũ Thanh Hải","dob":"11/08/1960","dod":"11/08/2021","burial":"13/08/2021","kin":"Vũ Minh An - 0913240885"}},{"id":"C-077","zone":"PK-C","model":"MM-03","slot":"Vòng 6 - Cung C2 - Ô 8","status":"Trống","area":3.3,"y":3.89,"rot":261.09,"cx":37.05,"cz":-15.69,"poly":[[36.48,-14.49],[36.14,-16.66],[37.62,-16.89],[37.96,-14.72],[36.48,-14.49]]},{"id":"C-078","zone":"PK-C","model":"MM-03","slot":"Vòng 6 - Cung C2 - Ô 9","status":"Đã an táng","area":3.3,"y":4.02,"rot":256.63,"cx":36.48,"cz":-12.83,"poly":[[36.01,-11.59],[35.5,-13.73],[36.95,-14.07],[37.46,-11.93],[36.01,-11.59]],"person":{"id":"NM-C078","name":"Đặng Thị Yến","dob":"13/10/1962","dod":"13/10/2023","burial":"15/10/2023","kin":"Đặng Minh Cường - 0913268467"}},{"id":"C-079","zone":"PK-C","model":"MM-03","slot":"Vòng 6 - Cung C2 - Ô 10","status":"Đã an táng","area":3.3,"y":4.13,"rot":252.19,"cx":35.7,"cz":-10.03,"poly":[[35.32,-8.75],[34.65,-10.85],[36.08,-11.31],[36.75,-9.21],[35.32,-8.75]],"person":{"id":"NM-C079","name":"Bùi Quốc Hòa","dob":"14/11/1963","dod":"14/11/2024","burial":"16/11/2024","kin":"Bùi Minh Dũng - 0913282258"}},{"id":"C-080","zone":"PK-C","model":"MM-03","slot":"Vòng 6 - Cung C2 - Ô 11","status":"Đã an táng","area":3.3,"y":4.21,"rot":247.73,"cx":34.7,"cz":-7.29,"poly":[[34.42,-5.99],[33.59,-8.02],[34.98,-8.59],[35.81,-6.56],[34.42,-5.99]],"person":{"id":"NM-C080","name":"Đỗ Hoàng Quân","dob":"15/12/1964","dod":"15/12/2025","burial":"17/12/2025","kin":"Đỗ Minh Hà - 0913296049"}}]};
+    function cloneData(obj) { return JSON.parse(JSON.stringify(obj)); }
+    let data = cloneData(DEFAULT_DATASET);
+    const MONUMENT_CENTER = { x: 0, z: -21.5 };
+    const GATE_1_POS = { x: 0, z: 50 };
+
+    function getTerrainHeight(x, z) {
+      return Math.sin(x * 0.05) * 1.8 + Math.cos(z * 0.04) * 1.5 + (x * 0.02 + z * 0.015) * 1.5;
+    }
+
+    const state = {
+      zoneFilter: 'ALL',
+      statusFilter: 'ALL',
+      searchQuery: '',
+      selectedItem: null,
+      routePath: null,
+      routeMeta: null,
+      layers: {
+        zones: true, graves: true, roads: true, fences: true,
+        buildings: true, trees: true, bushes: true, labels: true, grid: true
+      }
+    };
+
+    function showToast(msg) {
+      const el = document.getElementById('toast');
+      el.textContent = msg;
+      el.classList.remove('hidden');
+      clearTimeout(showToast._t);
+      showToast._t = setTimeout(() => el.classList.add('hidden'), 2600);
+    }
+
+    const svg = d3.select('#map-svg');
+    const rootG = d3.select('#viewport-root');
+    const lineGen = d3.line().x(d => d[0]).y(d => d[1]).curve(d3.curveLinear);
+    const polyClosedGen = d3.line().x(d => d[0]).y(d => d[1]).curve(d3.curveLinearClosed);
+
+    // Smooth D3 zoom/pan
+    const zoomBehavior = d3.zoom()
+      .scaleExtent([0.65, 8])
+      .on('zoom', (event) => {
+        rootG.attr('transform', event.transform);
+        document.getElementById('hud-scale').textContent = Math.round(event.transform.k * 100) + '%';
+      });
+    svg.call(zoomBehavior);
+
+    function resetZoom() {
+      svg.transition().duration(320).call(zoomBehavior.transform, d3.zoomIdentity.translate(0, -1));
+    }
+
+    // Mouse coordinate readout
+    svg.on('mousemove', (event) => {
+      const [mx, my] = d3.pointer(event, rootG.node());
+      if (isFinite(mx) && isFinite(my)) {
+        document.getElementById('hud-coords').textContent = `X: ${mx.toFixed(1)}m • Z: ${my.toFixed(1)}m`;
+        document.getElementById('hud-elev').textContent = `Y: ${getTerrainHeight(mx, my).toFixed(2)}m`;
+      }
+    });
+
+    function showTooltip(event, html) {
+      const tip = document.getElementById('hover-tooltip');
+      tip.innerHTML = html;
+      tip.classList.remove('hidden');
+      tip.style.left = Math.min(window.innerWidth - 250, event.clientX + 14) + 'px';
+      tip.style.top = Math.min(window.innerHeight - 90, event.clientY + 14) + 'px';
+    }
+    function hideTooltip() {
+      document.getElementById('hover-tooltip').classList.add('hidden');
+    }
+
+    function classifyInfra(inf) {
+      if (inf.id.startsWith('HT-FENCE')) return 'fence';
+      if (inf.id.startsWith('HT-BUSH')) return 'bush';
+      if (inf.id.startsWith('HT-BIGTREE')) return 'bigtree';
+      if (inf.id.startsWith('HT-TREE')) return 'tree';
+      if (inf.id.startsWith('HT-GATE')) return 'gate';
+      if (inf.id.startsWith('HT-MON')) return 'monument';
+      if (inf.id.startsWith('HT-PARK')) return 'parking';
+      return 'building';
+    }
+
+    function polyCentroid(poly) {
+      const pts = poly.length > 1 && poly[0][0] === poly[poly.length - 1][0] && poly[0][1] === poly[poly.length - 1][1]
+        ? poly.slice(0, -1) : poly;
+      const n = Math.max(1, pts.length);
+      return [
+        pts.reduce((a, p) => a + p[0], 0) / n,
+        pts.reduce((a, p) => a + p[1], 0) / n
+      ];
+    }
+
+    function getFilteredGraves() {
+      const q = state.searchQuery.trim().toLowerCase();
+      return data.graves.filter(g => {
+        if (state.zoneFilter !== 'ALL' && g.zone !== state.zoneFilter) return false;
+        if (state.statusFilter !== 'ALL' && g.status !== state.statusFilter) return false;
+        if (q) {
+          const hay = (g.id + ' ' + g.slot + ' ' + (g.person ? g.person.name : '')).toLowerCase();
+          if (!hay.includes(q)) return false;
+        }
+        return true;
+      });
+    }
+
+    function renderGrid() {
+      const g = d3.select('#layer-grid');
+      g.selectAll('*').remove();
+      if (!state.layers.grid) return;
+
+      g.append('rect')
+        .attr('x', -70).attr('y', -70).attr('width', 140).attr('height', 140)
+        .attr('rx', 2.5).attr('fill', '#0c1627')
+        .attr('stroke', 'rgba(148,163,184,0.32)').attr('stroke-width', 0.35).attr('stroke-dasharray', '1.8,1.4');
+
+      for (let v = -60; v <= 60; v += 10) {
+        const major = v % 20 === 0;
+        const stroke = major ? 'rgba(71,85,105,0.42)' : 'rgba(51,65,85,0.22)';
+        g.append('line').attr('x1', v).attr('y1', -70).attr('x2', v).attr('y2', 70).attr('stroke', stroke).attr('stroke-width', major ? 0.22 : 0.14);
+        g.append('line').attr('x1', -70).attr('y1', v).attr('x2', 70).attr('y2', v).attr('stroke', stroke).attr('stroke-width', major ? 0.22 : 0.14);
+        if (major) {
+          g.append('text').attr('x', v).attr('y', -71.6).attr('text-anchor', 'middle').attr('fill', '#64748b').attr('font-size', 2.4).attr('font-family', 'ui-monospace, monospace').text(v + 'm');
+          g.append('text').attr('x', -71.6).attr('y', v + 0.8).attr('text-anchor', 'end').attr('fill', '#64748b').attr('font-size', 2.4).attr('font-family', 'ui-monospace, monospace').text(v + 'm');
+        }
+      }
+    }
+
+    function renderZones() {
+      const g = d3.select('#layer-zones');
+      g.selectAll('*').remove();
+      if (!state.layers.zones) return;
+
+      const styles = {
+        'PK-A': { fill: 'rgba(14,165,233,0.10)', stroke: 'rgba(56,189,248,0.42)' },
+        'PK-B': { fill: 'rgba(168,85,247,0.10)', stroke: 'rgba(192,132,252,0.42)' },
+        'PK-C': { fill: 'rgba(16,185,129,0.10)', stroke: 'rgba(52,211,153,0.42)' }
+      };
+
+      data.zones.forEach(z => {
+        const st = styles[z.id] || { fill: 'rgba(100,116,139,0.1)', stroke: '#64748b' };
+        const dim = state.zoneFilter !== 'ALL' && state.zoneFilter !== z.id;
+        g.append('path')
+          .attr('d', polyClosedGen(z.poly))
+          .attr('fill', dim ? 'rgba(15,23,42,0.22)' : st.fill)
+          .attr('stroke', dim ? 'rgba(71,85,105,0.2)' : st.stroke)
+          .attr('stroke-width', 0.35)
+          .attr('stroke-linejoin', 'round');
+      });
+    }
+
+    function renderRoads() {
+      const g = d3.select('#layer-roads');
+      g.selectAll('*').remove();
+      if (!state.layers.roads) return;
+
+      // Outer curb shadow
+      data.roads.forEach(r => {
+        g.append('path')
+          .attr('d', lineGen(r.line))
+          .attr('fill', 'none')
+          .attr('stroke', '#334155')
+          .attr('stroke-width', r.width + 0.65)
+          .attr('stroke-linecap', 'round')
+          .attr('stroke-linejoin', 'round');
+      });
+      // Main paved surface
+      data.roads.forEach(r => {
+        g.append('path')
+          .attr('d', lineGen(r.line))
+          .attr('fill', 'none')
+          .attr('stroke', '#1e293b')
+          .attr('stroke-width', r.width)
+          .attr('stroke-linecap', 'round')
+          .attr('stroke-linejoin', 'round');
+      });
+      // Subtle architectural center marking
+      data.roads.forEach(r => {
+        g.append('path')
+          .attr('d', lineGen(r.line))
+          .attr('fill', 'none')
+          .attr('stroke', 'rgba(203,213,225,0.38)')
+          .attr('stroke-width', 0.24)
+          .attr('stroke-dasharray', '1.4,1.6')
+          .attr('stroke-linecap', 'round');
+      });
+    }
+
+    function renderFences() {
+      const g = d3.select('#layer-fences');
+      g.selectAll('*').remove();
+      if (!state.layers.fences) return;
+
+      data.infra.filter(i => classifyInfra(i) === 'fence').forEach(inf => {
+        const isSel = state.selectedItem && state.selectedItem.kind === 'infra' && state.selectedItem.item.id === inf.id;
+        g.append('path')
+          .attr('class', 'infra-item')
+          .attr('d', polyClosedGen(inf.poly))
+          .attr('fill', 'url(#fence-wall)')
+          .attr('stroke', isSel ? '#ffffff' : '#fecdd3')
+          .attr('stroke-width', isSel ? 0.45 : 0.22)
+          .attr('stroke-linejoin', 'round')
+          .attr('filter', 'url(#soft-shadow)')
+          .on('mousemove', (ev) => showTooltip(ev, `<div class="font-semibold text-rose-300">${inf.name}</div><div class="text-[10px] text-slate-400">${inf.id} • cao ${inf.height}m</div>`))
+          .on('mouseleave', hideTooltip)
+          .on('click', () => selectItem('infra', inf));
+      });
+    }
+
+    function renderBushes() {
+      const g = d3.select('#layer-bushes');
+      g.selectAll('*').remove();
+      if (!state.layers.bushes) return;
+
+      data.infra.filter(i => classifyInfra(i) === 'bush').forEach(inf => {
+        const [cx, cz] = polyCentroid(inf.poly);
+        const isSel = state.selectedItem && state.selectedItem.kind === 'infra' && state.selectedItem.item.id === inf.id;
+        const grp = g.append('g').attr('class', 'infra-item')
+          .on('mousemove', (ev) => showTooltip(ev, `<div class="font-semibold text-lime-300">${inf.name}</div><div class="text-[10px] text-slate-400">${inf.id} • 2m×2m • cao ${inf.height}m</div>`))
+          .on('mouseleave', hideTooltip)
+          .on('click', () => selectItem('infra', inf));
+
+        grp.append('path')
+          .attr('d', polyClosedGen(inf.poly))
+          .attr('fill', '#4d7c0f')
+          .attr('stroke', isSel ? '#ffffff' : '#a3e635')
+          .attr('stroke-width', isSel ? 0.35 : 0.2)
+          .attr('stroke-linejoin', 'round');
+        grp.append('circle')
+          .attr('cx', cx).attr('cy', cz).attr('r', 0.65)
+          .attr('fill', '#bef264').attr('opacity', 0.45);
+      });
+    }
+
+    function renderGraves() {
+      const g = d3.select('#layer-graves');
+      g.selectAll('*').remove();
+      if (!state.layers.graves) return;
+
+      const visibleSet = new Set(getFilteredGraves().map(item => item.id));
+      data.graves.forEach(lot => {
+        const visible = visibleSet.has(lot.id);
+        const isSel = state.selectedItem && state.selectedItem.kind === 'grave' && state.selectedItem.item.id === lot.id;
+
+        let fill = '#0ea5e9', stroke = '#38bdf8', headFill = '#e0f2fe';
+        if (lot.status === 'Trống') { fill = '#10b981'; stroke = '#6ee7b7'; headFill = '#d1fae5'; }
+        else if (lot.status === 'Đã đặt trước') { fill = '#f59e0b'; stroke = '#fcd34d'; headFill = '#fef3c7'; }
+
+        // Compute radial angle pointing from grave center to monument (0, -18)
+        const angleDeg = Math.atan2(MONUMENT_CENTER.z - lot.cz, MONUMENT_CENTER.x - lot.cx) * 180 / Math.PI;
+
+        const grp = g.append('g')
+          .attr('class', 'grave-group')
+          .attr('transform', `translate(${lot.cx}, ${lot.cz}) rotate(${angleDeg})`)
+          .attr('opacity', visible ? 1 : 0.16)
+          .on('mousemove', (ev) => showTooltip(ev, `<div class="font-semibold text-white">${lot.id} (${lot.zone})</div><div class="text-slate-300">${lot.status}${lot.person ? ' • ' + lot.person.name : ''}</div><div class="text-[10px] font-mono text-slate-400">(${lot.cx}, ${lot.cz}) • xoay ${lot.rot}°</div>`))
+          .on('mouseleave', hideTooltip)
+          .on('click', () => selectItem('grave', lot));
+
+        // Rounded grave slab (2.1m length along radial axis x 1.38m width)
+        grp.append('rect')
+          .attr('class', 'grave-body')
+          .attr('x', -1.05).attr('y', -0.69).attr('width', 2.1).attr('height', 1.38).attr('rx', 0.28)
+          .attr('fill', fill)
+          .attr('stroke', isSel ? '#ffffff' : stroke)
+          .attr('stroke-width', isSel ? 0.36 : 0.15);
+
+        // Architectural headstone bar on the side facing the central monument (+X in local rotated frame)
+        grp.append('rect')
+          .attr('x', 0.56).attr('y', -0.52).attr('width', 0.28).attr('height', 1.04).attr('rx', 0.12)
+          .attr('fill', headFill)
+          .attr('opacity', 0.9);
+      });
+    }
+
+    function renderBuildingsAndGates() {
+      const g = d3.select('#layer-buildings');
+      g.selectAll('*').remove();
+      if (!state.layers.buildings) return;
+
+      data.infra.forEach(inf => {
+        const kind = classifyInfra(inf);
+        if (kind !== 'building' && kind !== 'gate' && kind !== 'monument' && kind !== 'parking') return;
+        const [cx, cz] = polyCentroid(inf.poly);
+        const isSel = state.selectedItem && state.selectedItem.kind === 'infra' && state.selectedItem.item.id === inf.id;
+        const grp = g.append('g').attr('class', 'infra-item').attr('filter', 'url(#soft-shadow)')
+          .on('mousemove', (ev) => showTooltip(ev, `<div class="font-semibold text-amber-300">${inf.name}</div><div class="text-[10px] text-slate-400">${inf.id} • cao ${inf.height}m • DT ${inf.area}m²</div>`))
+          .on('mouseleave', hideTooltip)
+          .on('click', () => selectItem('infra', inf));
+
+                if (kind === 'parking') {
+          const isGuest = inf.id.includes('GUEST');
+          const clipId = 'clip-' + inf.id;
+          const defs = d3.select('#map-svg defs');
+          defs.select('#' + clipId).remove();
+          defs.append('clipPath').attr('id', clipId)
+            .append('path').attr('d', polyClosedGen(inf.poly));
+
+          // Contour-hugging asphalt pad
+          grp.append('path')
+            .attr('d', polyClosedGen(inf.poly))
+            .attr('fill', isGuest ? 'rgba(14, 116, 144, 0.32)' : 'rgba(109, 40, 217, 0.28)')
+            .attr('stroke', isSel ? '#ffffff' : (isGuest ? '#38bdf8' : '#c084fc'))
+            .attr('stroke-width', isSel ? 0.5 : 0.34)
+            .attr('stroke-linejoin', 'round');
+
+          // Clipped architectural parking bay grid lines
+          const bayG = grp.append('g').attr('clip-path', `url(#${clipId})`);
+          const xs = inf.poly.map(p => p[0]), zs = inf.poly.map(p => p[1]);
+          const minX = Math.min(...xs), maxX = Math.max(...xs), minZ = Math.min(...zs), maxZ = Math.max(...zs);
+          const strokeBay = isGuest ? 'rgba(125, 211, 252, 0.32)' : 'rgba(216, 180, 254, 0.32)';
+          // Horizontal aisle bands + vertical stall dividers
+          for (let z = Math.floor(minZ); z <= maxZ; z += 5.0) {
+            bayG.append('line').attr('x1', minX).attr('y1', z).attr('x2', maxX).attr('y2', z)
+              .attr('stroke', strokeBay).attr('stroke-width', 0.22).attr('stroke-dasharray', '1.4,0.8');
+            for (let x = Math.floor(minX); x <= maxX; x += 2.6) {
+              bayG.append('line').attr('x1', x).attr('y1', z).attr('x2', x).attr('y2', z + 2.8)
+                .attr('stroke', strokeBay).attr('stroke-width', 0.16);
+            }
+          }
+        } else if (kind === 'monument') {
+          // Architectural circular plaza + stepped monument pedestal
+          grp.append('circle').attr('cx', cx).attr('cy', cz).attr('r', 7.6)
+            .attr('fill', '#1e293b').attr('stroke', isSel ? '#ffffff' : '#eab308').attr('stroke-width', 0.42);
+          grp.append('circle').attr('cx', cx).attr('cy', cz).attr('r', 5.8)
+            .attr('fill', 'none').attr('stroke', 'rgba(250,204,21,0.45)').attr('stroke-width', 0.25).attr('stroke-dasharray', '1.2,0.8');
+          grp.append('circle').attr('cx', cx).attr('cy', cz).attr('r', 3.4)
+            .attr('fill', 'url(#monument-grad)').attr('stroke', '#fef9c3').attr('stroke-width', 0.28);
+          grp.append('circle').attr('cx', cx).attr('cy', cz).attr('r', 1.1).attr('fill', '#fef9c3');
+        } else if (kind === 'building') {
+          const xs = inf.poly.map(p => p[0]), zs = inf.poly.map(p => p[1]);
+          const minX = Math.min(...xs), maxX = Math.max(...xs), minZ = Math.min(...zs), maxZ = Math.max(...zs);
+          const w = maxX - minX, h = maxZ - minZ;
+          grp.append('rect')
+            .attr('x', minX).attr('y', minZ).attr('width', w).attr('height', h).attr('rx', 1.6)
+            .attr('fill', 'url(#building-roof)').attr('stroke', isSel ? '#ffffff' : '#a5b4fc').attr('stroke-width', isSel ? 0.48 : 0.3);
+          // Hipped roof architectural ridge lines
+          grp.append('rect')
+            .attr('x', minX + 2.2).attr('y', minZ + 2.2).attr('width', w - 4.4).attr('height', h - 4.4).attr('rx', 0.8)
+            .attr('fill', 'none').attr('stroke', 'rgba(224,231,255,0.42)').attr('stroke-width', 0.24);
+          grp.append('line').attr('x1', minX + 1.2).attr('y1', minZ + 1.2).attr('x2', minX + 2.4).attr('y2', minZ + 2.4).attr('stroke', 'rgba(224,231,255,0.35)').attr('stroke-width', 0.2);
+          grp.append('line').attr('x1', maxX - 1.2).attr('y1', minZ + 1.2).attr('x2', maxX - 2.4).attr('y2', minZ + 2.4).attr('stroke', 'rgba(224,231,255,0.35)').attr('stroke-width', 0.2);
+          grp.append('line').attr('x1', minX + 1.2).attr('y1', maxZ - 1.2).attr('x2', minX + 2.4).attr('y2', maxZ - 2.4).attr('stroke', 'rgba(224,231,255,0.35)').attr('stroke-width', 0.2);
+          grp.append('line').attr('x1', maxX - 1.2).attr('y1', maxZ - 1.2).attr('x2', maxX - 2.4).attr('y2', maxZ - 2.4).attr('stroke', 'rgba(224,231,255,0.35)').attr('stroke-width', 0.2);
+        } else if (kind === 'gate') {
+          const xs = inf.poly.map(p => p[0]), zs = inf.poly.map(p => p[1]);
+          const minX = Math.min(...xs), maxX = Math.max(...xs), minZ = Math.min(...zs), maxZ = Math.max(...zs);
+          const w = maxX - minX, h = maxZ - minZ;
+          grp.append('rect')
+            .attr('x', minX).attr('y', minZ).attr('width', w).attr('height', h).attr('rx', 0.9)
+            .attr('fill', 'url(#gate-roof)').attr('stroke', isSel ? '#ffffff' : '#fef3c7').attr('stroke-width', isSel ? 0.45 : 0.28);
+          // Gate pillars
+          grp.append('circle').attr('cx', minX + 1.1).attr('cy', cz).attr('r', 0.7).attr('fill', '#fef3c7');
+          grp.append('circle').attr('cx', maxX - 1.1).attr('cy', cz).attr('r', 0.7).attr('fill', '#fef3c7');
+        }
+      });
+    }
+
+    function renderTrees() {
+      const g = d3.select('#layer-trees');
+      g.selectAll('*').remove();
+      if (!state.layers.trees) return;
+
+      data.infra.forEach(inf => {
+        const kind = classifyInfra(inf);
+        if (kind !== 'bigtree' && kind !== 'tree') return;
+        const [cx, cz] = polyCentroid(inf.poly);
+        const r = kind === 'bigtree' ? 4.0 : 1.75;
+        const isSel = state.selectedItem && state.selectedItem.kind === 'infra' && state.selectedItem.item.id === inf.id;
+
+        const grp = g.append('g').attr('class', 'infra-item').attr('filter', 'url(#soft-shadow)')
+          .on('mousemove', (ev) => showTooltip(ev, `<div class="font-semibold text-emerald-300">${inf.name}</div><div class="text-[10px] text-slate-400">${inf.id} • cao ${inf.height}m</div>`))
+          .on('mouseleave', hideTooltip)
+          .on('click', () => selectItem('infra', inf));
+
+        // Layered botanical canopy
+        grp.append('circle').attr('cx', cx).attr('cy', cz).attr('r', r)
+          .attr('fill', kind === 'bigtree' ? 'url(#tree-big-grad)' : 'url(#tree-med-grad)')
+          .attr('stroke', isSel ? '#ffffff' : '#bbf7d0').attr('stroke-width', isSel ? 0.42 : 0.22);
+        grp.append('circle').attr('cx', cx - r * 0.18).attr('cy', cz - r * 0.18).attr('r', r * 0.56)
+          .attr('fill', '#86efac').attr('opacity', 0.28);
+        grp.append('circle').attr('cx', cx).attr('cy', cz).attr('r', kind === 'bigtree' ? 0.75 : 0.35)
+          .attr('fill', '#14532d');
+      });
+    }
+
+    function renderLabels() {
+      const g = d3.select('#layer-labels');
+      g.selectAll('*').remove();
+      if (!state.layers.labels) return;
+
+      const labels = [
+        { x: 0, y: -21.5, text: 'TƯỢNG ĐÀI', size: 2.2, color: '#fef08a' },
+        { x: 0, y: 23.1, text: 'CỔNG 2', size: 2.0, color: '#fef3c7' },
+        { x: 0, y: 50.7, text: 'CỔNG 1', size: 2.05, color: '#fef3c7' },
+        { x: 14.0, y: 30.1, text: 'NHÀ TANG LỄ', size: 1.65, color: '#e0e7ff' },
+        { x: 14.0, y: 43.5, text: 'NHÀ LƯU TRO', size: 1.65, color: '#e0e7ff' },
+        { x: -23.5, y: 35.8, text: 'P • BÃI XE KHÁCH', size: 2.15, color: '#7dd3fc' },
+        { x: 31.2, y: 35.8, text: 'P • BÃI XE NV', size: 1.85, color: '#e9d5ff' },
+        { x: -38.8, y: 57.8, text: 'ĐẠI THỤ', size: 1.55, color: '#dcfce7' },
+        { x: 38.8, y: 57.8, text: 'ĐẠI THỤ', size: 1.55, color: '#dcfce7' },
+        { x: -26.5, y: 2.0, text: 'PK-A', size: 2.4, color: '#7dd3fc' },
+        { x: 0, y: -53.0, text: 'PK-B', size: 2.4, color: '#d8b4fe' },
+        { x: 26.5, y: 2.0, text: 'PK-C', size: 2.4, color: '#6ee7b7' }
+      ];
+
+      labels.forEach(l => {
+        g.append('text')
+          .attr('x', l.x).attr('y', l.y)
+          .attr('text-anchor', 'middle')
+          .attr('fill', l.color)
+          .attr('font-size', l.size)
+          .attr('font-weight', '700')
+          .attr('letter-spacing', '0.06em')
+          .attr('class', 'label-halo pointer-events-none')
+          .text(l.text);
+      });
+    }
+
+    function renderRoute() {
+      const g = d3.select('#layer-route');
+      g.selectAll('*').remove();
+      if (!state.routePath || state.routePath.length < 2) return;
+
+      g.append('path')
+        .attr('d', lineGen(state.routePath))
+        .attr('fill', 'none')
+        .attr('stroke', '#f43f5e')
+        .attr('stroke-width', 1.45)
+        .attr('stroke-linecap', 'round')
+        .attr('stroke-linejoin', 'round')
+        .attr('opacity', 0.4)
+        .attr('filter', 'url(#glow-route)');
+
+      g.append('path')
+        .attr('d', lineGen(state.routePath))
+        .attr('fill', 'none')
+        .attr('stroke', '#fda4af')
+        .attr('stroke-width', 0.62)
+        .attr('stroke-dasharray', '1.6,1.1')
+        .attr('stroke-linecap', 'round');
+
+      if (state.routeFinalStep && state.routeFinalStep.length === 2) {
+        g.append('path')
+          .attr('d', lineGen(state.routeFinalStep))
+          .attr('fill', 'none')
+          .attr('stroke', '#fbbf24')
+          .attr('stroke-width', 0.55)
+          .attr('stroke-dasharray', '0.9,0.7')
+          .attr('stroke-linecap', 'round');
+      }
+      const s = state.routePath[0];
+      const e = state.routeFinalStep ? state.routeFinalStep[1] : state.routePath[state.routePath.length - 1];
+      g.append('circle').attr('cx', s[0]).attr('cy', s[1]).attr('r', 1.25).attr('fill', '#10b981').attr('stroke', '#fff').attr('stroke-width', 0.35);
+      g.append('circle').attr('cx', e[0]).attr('cy', e[1]).attr('r', 1.45).attr('fill', '#f43f5e').attr('stroke', '#fff').attr('stroke-width', 0.38);
+    }
+
+    function renderAll() {
+      renderGrid();
+      renderZones();
+      renderRoads();
+      renderFences();
+      renderBushes();
+      renderGraves();
+      renderBuildingsAndGates();
+      renderTrees();
+      renderRoute();
+      renderLabels();
+    }
+
+    function selectItem(kind, item) {
+      state.selectedItem = { kind, item };
+      renderInspector();
+      switchTab('inspector');
+      if (window.innerWidth < 1024) {
+        document.getElementById('sidebar').classList.remove('hidden');
+        document.getElementById('sidebar').classList.add('flex');
+      }
+      renderAll();
+    }
+
+    function updateStats() {
+      const list = getFilteredGraves();
+      document.getElementById('kpi-graves').textContent = list.length;
+      document.getElementById('kpi-empty').textContent = list.filter(g => g.status === 'Trống').length;
+      document.getElementById('kpi-reserved').textContent = list.filter(g => g.status === 'Đã đặt trước').length;
+      document.getElementById('kpi-buried').textContent = list.filter(g => g.status === 'Đã an táng').length;
+
+      document.getElementById('zone-capacity-list').innerHTML = data.zones.map(z => {
+        const zg = data.graves.filter(g => g.zone === z.id);
+        const occ = zg.filter(g => g.status !== 'Trống').length;
+        const pct = zg.length ? Math.round((occ / zg.length) * 100) : 0;
+        return `
+          <div class="bg-slate-900/90 border border-slate-800 rounded-lg p-2">
+            <div class="flex justify-between items-center mb-1">
+              <span class="font-semibold text-slate-200">${z.id}</span>
+              <span class="text-slate-400">${occ}/${zg.length} (${pct}%)</span>
+            </div>
+            <div class="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+              <div class="h-full bg-emerald-500 rounded-full" style="width:${pct}%"></div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function populateRouteTargets() {
+      const sel = document.getElementById('route-target-select');
+      const cur = sel.value;
+      sel.innerHTML = data.graves.map(g => `<option value="${g.id}">${g.id} (${g.zone} • ${g.status})</option>`).join('');
+      if (cur && data.graves.some(g => g.id === cur)) sel.value = cur;
+    }
+
+    function renderInspector() {
+      const box = document.getElementById('inspector-content');
+      if (!state.selectedItem) {
+        box.innerHTML = `<div class="bg-slate-950/80 border border-slate-800 rounded-xl p-4 text-center text-slate-400">Nhấp vào bất kỳ <strong class="text-white">lô mộ</strong> hoặc <strong class="text-white">công trình</strong> nào trên bản đồ để xem chi tiết.</div>`;
+        return;
+      }
+      if (state.selectedItem.kind === 'grave') {
+        const g = state.selectedItem.item;
+        const badgeCls = g.status === 'Trống' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+          : g.status === 'Đã đặt trước' ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+          : 'bg-sky-500/20 text-sky-300 border-sky-500/40';
+        const distToMon = Math.hypot(g.cx - MONUMENT_CENTER.x, g.cz - MONUMENT_CENTER.z).toFixed(2);
+        box.innerHTML = `
+          <div class="bg-slate-950/90 border border-slate-800 rounded-xl p-3 space-y-2.5">
+            <div class="flex items-center justify-between gap-2">
+              <div>
+                <div class="text-sm font-bold text-white">${g.id}</div>
+                <div class="text-[11px] text-slate-400">${g.slot}</div>
+              </div>
+              <span class="px-2 py-0.5 rounded-full text-[11px] font-medium border ${badgeCls}">${g.status}</span>
+            </div>
+            <div class="grid grid-cols-2 gap-2 text-[11px] pt-1 border-t border-slate-800">
+              <div><span class="text-slate-500">Phân khu:</span> <strong class="text-slate-200">${g.zone}</strong></div>
+              <div><span class="text-slate-500">Mẫu 3D:</span> <strong class="text-slate-200">${g.model}</strong></div>
+              <div><span class="text-slate-500">Tọa độ X, Z:</span> <strong class="font-mono text-emerald-300">${g.cx}, ${g.cz}</strong></div>
+              <div><span class="text-slate-500">Cao độ Y:</span> <strong class="font-mono text-slate-200">${g.y}m</strong></div>
+              <div><span class="text-slate-500">Góc xoay Z:</span> <strong class="font-mono text-slate-200">${g.rot}°</strong></div>
+              <div><span class="text-slate-500">Cách Tượng đài:</span> <strong class="font-mono text-slate-200">${distToMon}m</strong></div>
+            </div>
+            ${g.person ? `
+              <div class="bg-slate-900 border border-slate-800 rounded-lg p-2.5 space-y-1 text-[11px]">
+                <div class="font-semibold text-sky-300">Thông tin Người mất (${g.person.id})</div>
+                <div>Họ tên: <strong class="text-white">${g.person.name}</strong></div>
+                <div>Sinh – Mất: ${g.person.dob} — ${g.person.dod}</div>
+                <div>An táng: ${g.person.burial}</div>
+                <div class="text-slate-400">Thân nhân: ${g.person.kin}</div>
+              </div>
+            ` : `<div class="text-[11px] text-slate-500 italic">Chưa có bản ghi người mất (lô sẵn sàng cấp phát).</div>`}
+            <div class="pt-2 border-t border-slate-800 space-y-2">
+              <div class="text-[11px] font-semibold text-rose-300">Chỉ đường bám theo tuyến đường</div>
+              <div class="flex gap-1.5">
+                <select id="insp-route-start" class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-[11px] text-slate-100">
+                  <option value="GATE1">Từ Cổng 1 (0, 50)</option>
+                  <option value="GUEST_PARK">Từ Bãi Xe Khách</option>
+                  <option value="GATE2">Từ Cổng 2 (0, 22.5)</option>
+                </select>
+                <button id="btn-insp-route" type="button" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-600 hover:bg-rose-500 text-white cursor-pointer">Chỉ đường</button>
+              </div>
+            </div>
+
+            <div class="pt-2 border-t border-slate-800 space-y-2">
+              <div class="text-[11px] font-semibold text-emerald-300">Đặt trước / Đăng ký / Hủy lô đất</div>
+              <div class="space-y-1.5">
+                <input id="lot-ho-ten" type="text" value="${g.person ? g.person.name : ''}" placeholder="Họ tên người mất / người đặt trước *" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-emerald-500" />
+                <div class="grid grid-cols-2 gap-1.5">
+                  <input id="lot-ngay-sinh" type="text" value="${g.person ? g.person.dob : ''}" placeholder="Ngày sinh (DD/MM/YYYY)" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-[11px] text-slate-100" />
+                  <input id="lot-ngay-mat" type="text" value="${g.person ? g.person.dod : ''}" placeholder="Ngày mất (DD/MM/YYYY)" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-[11px] text-slate-100" />
+                </div>
+                <input id="lot-ngay-an-tang" type="text" value="${g.person ? g.person.burial : ''}" placeholder="Ngày an táng / dự kiến (DD/MM/YYYY)" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-[11px] text-slate-100" />
+                <input id="lot-than-nhan" type="text" value="${g.person ? g.person.kin : ''}" placeholder="Thân nhân liên hệ & SĐT" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-[11px] text-slate-100" />
+              </div>
+              <div class="grid grid-cols-2 gap-1.5">
+                <button id="btn-lot-reserve" type="button" class="py-1.5 rounded-lg text-xs font-semibold bg-amber-600 hover:bg-amber-500 text-white cursor-pointer">Đặt trước lô</button>
+                <button id="btn-lot-register" type="button" class="py-1.5 rounded-lg text-xs font-semibold bg-sky-600 hover:bg-sky-500 text-white cursor-pointer">Đăng ký an táng</button>
+              </div>
+              <button id="btn-lot-cancel" type="button" class="w-full py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-rose-700 text-rose-300 hover:text-white border border-slate-700 cursor-pointer">Hủy lô đất (Thu hồi về Trống)</button>
+            </div>
+          </div>
+        `;
+        document.getElementById('btn-insp-route').addEventListener('click', () => {
+          const startKey = document.getElementById('insp-route-start').value;
+          runDijkstraToGrave(g.id, startKey);
+        });
+        const readForm = () => ({
+          name: document.getElementById('lot-ho-ten').value.trim(),
+          dob: document.getElementById('lot-ngay-sinh').value.trim(),
+          dod: document.getElementById('lot-ngay-mat').value.trim(),
+          burial: document.getElementById('lot-ngay-an-tang').value.trim(),
+          kin: document.getElementById('lot-than-nhan').value.trim()
+        });
+        document.getElementById('btn-lot-reserve').addEventListener('click', () => {
+          const f = readForm();
+          if (!f.name) { showToast('Vui lòng nhập Họ tên người đặt trước.'); return; }
+          saveGraveChange(g, 'Đã đặt trước', f);
+        });
+        document.getElementById('btn-lot-register').addEventListener('click', () => {
+          const f = readForm();
+          if (!f.name) { showToast('Vui lòng nhập Họ tên người mất để đăng ký.'); return; }
+          saveGraveChange(g, 'Đã an táng', f);
+        });
+        document.getElementById('btn-lot-cancel').addEventListener('click', () => {
+          saveGraveChange(g, 'Trống', { name: '' });
+        });
+      } else {
+        const inf = state.selectedItem.item;
+        box.innerHTML = `
+          <div class="bg-slate-950/90 border border-slate-800 rounded-xl p-3 space-y-2">
+            <div class="text-sm font-bold text-white">${inf.name}</div>
+            <div class="text-[11px] font-mono text-amber-300">${inf.id} • ${inf.type}</div>
+            <div class="grid grid-cols-2 gap-2 text-[11px] pt-2 border-t border-slate-800">
+              <div><span class="text-slate-500">Diện tích:</span> <strong class="text-slate-200">${inf.area} m²</strong></div>
+              <div><span class="text-slate-500">Chiều cao 3D:</span> <strong class="text-slate-200">${inf.height} m</strong></div>
+              <div><span class="text-slate-500">Bán kính cách ly:</span> <strong class="text-slate-200">${inf.buffer} m</strong></div>
+              <div><span class="text-slate-500">Số đỉnh đa giác:</span> <strong class="text-slate-200">${inf.poly.length}</strong></div>
+            </div>
+          </div>
+        `;
+      }
+    }
+
+    const ROUTE_STARTS = {
+      GATE1: { label: 'Cổng 1', x: 0, z: 50.0 },
+      GUEST_PARK: { label: 'Bãi Xe Khách', x: -9.5, z: 36.2 },
+      GATE2: { label: 'Cổng 2', x: 0, z: 22.5 }
+    };
+
+    function runDijkstraToGrave(graveId, startKey = 'GATE1') {
+      const target = data.graves.find(g => g.id === graveId);
+      if (!target) return;
+      const startCfg = ROUTE_STARTS[startKey] || ROUTE_STARTS.GATE1;
+
+      const nodes = [], adj = new Map(), edges = [], SNAP = 1.6;
+      function getNodeId(x, z, y) {
+        for (let i = 0; i < nodes.length; i++) {
+          if (Math.hypot(nodes[i].x - x, nodes[i].z - z) <= SNAP) return i;
+        }
+        const id = nodes.length;
+        nodes.push({ x, z, y: y !== undefined ? y : getTerrainHeight(x, z) });
+        adj.set(id, []);
+        return id;
+      }
+      function linkNodes(u, v) {
+        if (u === v) return;
+        const w = Math.hypot(nodes[u].x - nodes[v].x, nodes[u].z - nodes[v].z, nodes[u].y - nodes[v].y);
+        adj.get(u).push({ to: v, w });
+        adj.get(v).push({ to: u, w });
+      }
+
+      // Build connected road graph from all 10 road polylines
+      data.roads.forEach(r => {
+        for (let i = 0; i < r.line.length - 1; i++) {
+          const a = r.line[i], b = r.line[i + 1];
+          const u = getNodeId(a[0], a[1], a[2]), v = getNodeId(b[0], b[1], b[2]);
+          if (u === v) continue;
+          linkNodes(u, v);
+          edges.push([u, v]);
+        }
+      });
+
+      // Project any point perpendicularly onto the NEAREST road segment so route stays 100% on roads!
+      function projectOntoRoad(px, pz) {
+        let best = null;
+        for (const [u, v] of edges) {
+          const a = nodes[u], b = nodes[v];
+          const dx = b.x - a.x, dz = b.z - a.z, l2 = dx*dx + dz*dz;
+          const t = l2 === 0 ? 0 : Math.max(0, Math.min(1, ((px - a.x)*dx + (pz - a.z)*dz) / l2));
+          const qx = a.x + t*dx, qz = a.z + t*dz;
+          const d = Math.hypot(px - qx, pz - qz);
+          if (!best || d < best.d) best = { u, v, qx, qz, d };
+        }
+        if (!best) return 0;
+        const id = nodes.length;
+        nodes.push({ x: +best.qx.toFixed(2), z: +best.qz.toFixed(2), y: getTerrainHeight(best.qx, best.qz) });
+        adj.set(id, []);
+        linkNodes(id, best.u);
+        linkNodes(id, best.v);
+        return id;
+      }
+
+      const start = projectOntoRoad(startCfg.x, startCfg.z);
+      const goal = projectOntoRoad(target.cx, target.cz);
+
+      const dist = new Array(nodes.length).fill(Infinity);
+      const prev = new Array(nodes.length).fill(-1);
+      const vis = new Array(nodes.length).fill(false);
+      dist[start] = 0;
+
+      for (let iter = 0; iter < nodes.length; iter++) {
+        let u = -1, best = Infinity;
+        for (let i = 0; i < nodes.length; i++) if (!vis[i] && dist[i] < best) { best = dist[i]; u = i; }
+        if (u === -1 || u === goal) break;
+        vis[u] = true;
+        for (const e of adj.get(u)) if (dist[u] + e.w < dist[e.to]) { dist[e.to] = dist[u] + e.w; prev[e.to] = u; }
+      }
+      if (!isFinite(dist[goal])) { showToast('Không tìm thấy tuyến đường kết nối!'); return; }
+
+      const roadPath = [];
+      for (let cur = goal; cur !== -1; cur = prev[cur]) roadPath.push([nodes[cur].x, nodes[cur].z]);
+      roadPath.reverse();
+      const curbStep = Math.hypot(target.cx - nodes[goal].x, target.cz - nodes[goal].z, target.y - nodes[goal].y);
+      const total3d = dist[goal] + curbStep;
+
+      state.routePath = roadPath;
+      state.routeFinalStep = [roadPath[roadPath.length - 1], [target.cx, target.cz]];
+      state.routeMeta = { startLabel: startCfg.label, targetId: target.id, total3d: total3d.toFixed(2), roadDist: dist[goal].toFixed(2), curbDist: curbStep.toFixed(1), hops: roadPath.length };
+      document.getElementById('route-info').innerHTML = `
+        <div class="bg-rose-500/10 border border-rose-500/30 rounded-lg p-2.5 space-y-1">
+          <div class="font-semibold text-rose-300">${startCfg.label} → ${target.id} (${target.zone})</div>
+          <div>Tổng quãng đường 3D: <strong class="text-white">${state.routeMeta.total3d} m</strong></div>
+          <div class="text-[11px] text-slate-400">Bám đường nhựa: ${state.routeMeta.roadDist}m • Rẽ vào lô: ${state.routeMeta.curbDist}m</div>
+        </div>
+      `;
+      document.getElementById('route-target-select').value = target.id;
+      renderRoute();
+      showToast(`Đã chỉ đường bám tuyến đến ${target.id} (${state.routeMeta.total3d}m)`);
+    }
+
+    function polysOverlapSAT(pA, pB) {
+      const a = pA.slice(0, -1), b = pB.slice(0, -1);
+      for (const poly of [a, b]) {
+        for (let i = 0; i < poly.length; i++) {
+          const p1 = poly[i], p2 = poly[(i + 1) % poly.length];
+          const nx = -(p2[1] - p1[1]), ny = p2[0] - p1[0];
+          let minA = Infinity, maxA = -Infinity, minB = Infinity, maxB = -Infinity;
+          for (const p of a) { const pr = p[0]*nx + p[1]*ny; if (pr < minA) minA = pr; if (pr > maxA) maxA = pr; }
+          for (const p of b) { const pr = p[0]*nx + p[1]*ny; if (pr < minB) minB = pr; if (pr > maxB) maxB = pr; }
+          if (maxA <= minB + 1e-4 || maxB <= minA + 1e-4) return false;
+        }
+      }
+      return true;
+    }
+
+    function pointToSegDist(px, pz, x1, z1, x2, z2) {
+      const dx = x2 - x1, dz = z2 - z1, l2 = dx*dx + dz*dz;
+      if (l2 === 0) return Math.hypot(px - x1, pz - z1);
+      const t = Math.max(0, Math.min(1, ((px - x1)*dx + (pz - z1)*dz) / l2));
+      return Math.hypot(px - (x1 + t*dx), pz - (z1 + t*dz));
+    }
+
+    function runTopologyAudit() {
+      let graveOverlaps = 0, minCenterDist = Infinity, roadViolations = 0, outOfBounds = 0;
+      for (let i = 0; i < data.graves.length; i++) {
+        const g1 = data.graves[i];
+        if (Math.abs(g1.cx) > 70 || Math.abs(g1.cz) > 70) outOfBounds++;
+        for (let j = i + 1; j < data.graves.length; j++) {
+          const g2 = data.graves[j];
+          const d = Math.hypot(g1.cx - g2.cx, g1.cz - g2.cz);
+          if (d < minCenterDist) minCenterDist = d;
+          if (d < 3.2 && polysOverlapSAT(g1.poly, g2.poly)) graveOverlaps++;
+        }
+        let hitsRoad = false;
+        for (const r of data.roads) {
+          const minAllowed = r.width / 2 + 0.7;
+          for (let k = 0; k < r.line.length - 1; k++) {
+            if (pointToSegDist(g1.cx, g1.cz, r.line[k][0], r.line[k][1], r.line[k+1][0], r.line[k+1][1]) < minAllowed) { hitsRoad = true; break; }
+          }
+          if (hitsRoad) break;
+        }
+        if (hitsRoad) roadViolations++;
+      }
+      const ok = graveOverlaps === 0 && roadViolations === 0 && outOfBounds === 0;
+      document.getElementById('badge-audit').className = ok
+        ? 'hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+        : 'hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-rose-500/15 text-rose-300 border border-rose-500/30';
+      document.getElementById('badge-audit-text').textContent = ok ? `Đạt chuẩn (${data.graves.length} mộ • 0 chồng lấn)` : 'Phát hiện lỗi hình học';
+      document.getElementById('audit-results').innerHTML = `
+        <div class="flex justify-between py-1 border-b border-slate-800"><span>Chồng lấn mộ–mộ (SAT)</span><strong class="${graveOverlaps === 0 ? 'text-emerald-400' : 'text-rose-400'}">${graveOverlaps} cặp</strong></div>
+        <div class="flex justify-between py-1 border-b border-slate-800"><span>Mộ đè lối đi (Buffer đường)</span><strong class="${roadViolations === 0 ? 'text-emerald-400' : 'text-rose-400'}">${roadViolations} lô</strong></div>
+        <div class="flex justify-between py-1 border-b border-slate-800"><span>Vượt biên 140m × 140m</span><strong class="${outOfBounds === 0 ? 'text-emerald-400' : 'text-rose-400'}">${outOfBounds} lô</strong></div>
+        <div class="flex justify-between py-1"><span>Khoảng cách tâm gần nhất</span><strong class="font-mono text-sky-300">${isFinite(minCenterDist) ? minCenterDist.toFixed(2) + ' m' : 'N/A'}</strong></div>
+      `;
+    }
+
+    function switchTab(tabName) {
+      document.querySelectorAll('.tab-btn').forEach(b => {
+        const active = b.dataset.tab === tabName;
+        b.classList.toggle('border-emerald-400', active);
+        b.classList.toggle('text-emerald-300', active);
+        b.classList.toggle('border-transparent', !active);
+        b.classList.toggle('text-slate-400', !active);
+      });
+      ['layers', 'inspector', 'qa'].forEach(p => document.getElementById('panel-' + p).classList.toggle('hidden', p !== tabName));
+    }
+
+    function renderSearchList() {
+      const q = state.searchQuery.trim();
+      const box = document.getElementById('search-results');
+      document.getElementById('btn-clear-search').classList.toggle('hidden', !q);
+      if (!q) { box.innerHTML = ''; return; }
+      const matches = getFilteredGraves().slice(0, 12);
+      if (!matches.length) { box.innerHTML = `<div class="text-[11px] text-slate-500 px-1">Không tìm thấy lô mộ khớp.</div>`; return; }
+      box.innerHTML = matches.map(g => `
+        <button data-jump="${g.id}" type="button" class="w-full text-left px-2.5 py-1.5 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 flex items-center justify-between text-xs cursor-pointer">
+          <span class="font-semibold text-white">${g.id} <span class="font-normal text-slate-400">${g.person ? '• ' + g.person.name : ''}</span></span>
+          <span class="text-[10px] text-emerald-300">${g.zone}</span>
+        </button>
+      `).join('');
+      box.querySelectorAll('[data-jump]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const g = data.graves.find(item => item.id === btn.dataset.jump);
+          if (!g) return;
+          selectItem('grave', g);
+          svg.transition().duration(380).call(zoomBehavior.transform, d3.zoomIdentity.scale(3.2).translate(-g.cx, -g.cz));
+        });
+      });
+    }
+
+    // Controls
+    document.getElementById('btn-zoom-in').addEventListener('click', () => svg.transition().duration(200).call(zoomBehavior.scaleBy, 1.3));
+    document.getElementById('btn-zoom-out').addEventListener('click', () => svg.transition().duration(200).call(zoomBehavior.scaleBy, 0.77));
+    document.getElementById('btn-zoom-reset').addEventListener('click', resetZoom);
+
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
+    document.getElementById('btn-toggle-sidebar').addEventListener('click', () => {
+      const sb = document.getElementById('sidebar');
+      sb.classList.toggle('hidden'); sb.classList.toggle('flex');
+    });
+
+    document.querySelectorAll('.zone-btn').forEach(btn => btn.addEventListener('click', () => {
+      state.zoneFilter = btn.dataset.zone;
+      document.querySelectorAll('.zone-btn').forEach(b => {
+        b.className = b.dataset.zone === state.zoneFilter
+          ? 'zone-btn py-1.5 rounded-md text-xs font-medium bg-emerald-600 text-white cursor-pointer'
+          : 'zone-btn py-1.5 rounded-md text-xs font-medium bg-slate-800 text-slate-300 hover:bg-slate-700 cursor-pointer';
+      });
+      updateStats(); renderSearchList(); renderAll();
+    }));
+
+    document.querySelectorAll('.status-btn').forEach(btn => btn.addEventListener('click', () => {
+      state.statusFilter = btn.dataset.status;
+      document.querySelectorAll('.status-btn').forEach(b => {
+        b.className = b.dataset.status === state.statusFilter
+          ? 'status-btn py-1.5 rounded-md text-xs font-medium bg-emerald-600 text-white cursor-pointer'
+          : 'status-btn py-1.5 rounded-md text-xs font-medium bg-slate-800 text-slate-300 hover:bg-slate-700 cursor-pointer';
+      });
+      updateStats(); renderSearchList(); renderAll();
+    }));
+
+    document.querySelectorAll('.layer-toggle').forEach(chk => chk.addEventListener('change', () => {
+      state.layers[chk.dataset.layer] = chk.checked;
+      renderAll();
+    }));
+
+    document.getElementById('search-input').addEventListener('input', e => {
+      state.searchQuery = e.target.value;
+      updateStats(); renderSearchList(); renderAll();
+    });
+    document.getElementById('btn-clear-search').addEventListener('click', () => {
+      state.searchQuery = '';
+      document.getElementById('search-input').value = '';
+      updateStats(); renderSearchList(); renderAll();
+    });
+
+    document.getElementById('btn-run-audit').addEventListener('click', () => {
+      runTopologyAudit();
+      switchTab('qa');
+      if (window.innerWidth < 1024) {
+        document.getElementById('sidebar').classList.remove('hidden');
+        document.getElementById('sidebar').classList.add('flex');
+      }
+      showToast('Đã hoàn tất kiểm tra Topology 2D!');
+    });
+    document.getElementById('btn-audit-rerun').addEventListener('click', () => { runTopologyAudit(); showToast('Đã chạy lại kiểm tra hình học'); });
+
+    document.getElementById('btn-route-go').addEventListener('click', () => runDijkstraToGrave(document.getElementById('route-target-select').value));
+    document.getElementById('btn-route-clear').addEventListener('click', () => {
+      state.routePath = null; state.routeFinalStep = null; state.routeMeta = null;
+      document.getElementById('route-info').innerHTML = '';
+      renderRoute();
+    });
+
+    document.getElementById('btn-export-geojson').addEventListener('click', () => {
+      const fc = {
+        type: 'FeatureCollection',
+        features: data.graves.map(g => ({
+          type: 'Feature',
+          properties: { ma_lo_dat: g.id, ma_phan_khu: g.zone, trang_thai: g.status, cao_do_z: g.y, goc_xoay_z: g.rot },
+          geometry: { type: 'Polygon', coordinates: [g.poly] }
+        }))
+      };
+      const blob = new Blob([JSON.stringify(fc, null, 2)], { type: 'application/geo+json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'cemetery-2d-graves.geojson'; a.click();
+      URL.revokeObjectURL(url);
+      showToast('Đã xuất file cemetery-2d-graves.geojson');
+    });
+
+    
+    // Live Backend API loader (same-origin /api/*, read-only, zero impact on FE)
+    function normalizeApiGrave(r, idx) {
+      const pos = Array.isArray(r.position) ? r.position : [0, 0, 0];
+      const cx = Number(pos[0]) || 0;
+      const cy = Number(pos[1]) || 0;
+      const cz = Number(pos[2]) || 0;
+      let poly = null;
+      if (r.geojson && r.geojson.type === 'Polygon' && Array.isArray(r.geojson.coordinates[0])) {
+        poly = r.geojson.coordinates[0].map(p => [Number(p[0]), Number(p[1])]);
+      } else {
+        const rad = ((Number(r.goc_xoay_z) || 0) * Math.PI) / 180;
+        const c = Math.cos(rad), s = Math.sin(rad);
+        const hw = 0.75, hl = 1.1;
+        poly = [[-hl,-hw],[hl,-hw],[hl,hw],[-hl,hw],[-hl,-hw]].map(([dx, dz]) => [+(cx + dx*c - dz*s).toFixed(2), +(cz + dx*s + dz*c).toFixed(2)]);
+      }
+      const zoneRaw = String(r.ma_phan_khu || 'PK-A');
+      const zone = zoneRaw.includes('A') ? 'PK-A' : zoneRaw.includes('B') ? 'PK-B' : zoneRaw.includes('C') ? 'PK-C' : zoneRaw;
+      return {
+        id: r.ma_lo_dat || ('LOT-' + (idx + 1)),
+        zone,
+        model: r.ma_mau_mo || r.ten_mau_mo || 'MM-01',
+        slot: r.vi_tri_hang_o || 'Supabase',
+        status: r.trang_thai || 'Trống',
+        area: Number(r.dien_tich_lo) || 3.3,
+        y: cy,
+        rot: Number(r.goc_xoay_z) || 0,
+        cx, cz, poly,
+        person: r.nguoi_mat ? {
+          id: 'DB',
+          name: r.nguoi_mat.ho_ten || '',
+          dob: r.nguoi_mat.ngay_sinh || '',
+          dod: r.nguoi_mat.ngay_mat || '',
+          burial: r.nguoi_mat.ngay_an_tang || '',
+          kin: r.nguoi_mat.thong_tin_than_nhan || ''
+        } : undefined
+      };
+    }
+
+    function normalizeApiInfra(r) {
+      let poly = [];
+      if (r.geojson && r.geojson.type === 'MultiPolygon' && r.geojson.coordinates?.[0]?.[0]) {
+        poly = r.geojson.coordinates[0][0].map(p => [Number(p[0]), Number(p[1])]);
+      } else if (r.geojson && r.geojson.type === 'Polygon' && r.geojson.coordinates?.[0]) {
+        poly = r.geojson.coordinates[0].map(p => [Number(p[0]), Number(p[1])]);
+      }
+      return {
+        id: r.ma_ha_tang,
+        zone: r.ma_phan_khu || null,
+        name: r.ten_ha_tang || r.ma_ha_tang,
+        type: r.loai_ha_tang || 'CONG',
+        area: Number(r.dien_tich_xay_dung) || 0,
+        height: Number(r.chieu_cao_3d) || 0,
+        buffer: Number(r.ban_kinh_cach_ly) || 0,
+        poly
+      };
+    }
+
+    function normalizeApiRoad(r) {
+      let line = [];
+      if (r.geojson && r.geojson.type === 'LineString' && Array.isArray(r.geojson.coordinates)) {
+        line = r.geojson.coordinates.map(p => [Number(p[0]), Number(p[1]), Number(p[2] || 0)]);
+      }
+      return {
+        id: r.ma_tuyen_duong,
+        zone: r.ma_phan_khu || null,
+        name: r.ten_tuyen_duong || r.ma_tuyen_duong,
+        width: Number(r.chieu_rong_duong) || 3,
+        area: Number(r.dien_tich_duong) || 0,
+        line
+      };
+    }
+
+    async function loadFromLiveBackend() {
+      const pill = document.getElementById('source-pill');
+      pill.innerHTML = 'Đang tải từ <strong class="text-amber-300">Live Supabase API...</strong>';
+      try {
+        const [gRes, iRes, rRes] = await Promise.all([
+          fetch('/api/graves'),
+          fetch('/api/zones/infrastructure'),
+          fetch('/api/zones/roads')
+        ]);
+        if (!gRes.ok || !iRes.ok || !rRes.ok) throw new Error('HTTP ' + gRes.status + '/' + iRes.status + '/' + rRes.status);
+        const [gJson, iJson, rJson] = await Promise.all([gRes.json(), iRes.json(), rRes.json()]);
+        const graves = (gJson.data || []).map(normalizeApiGrave);
+        const infra = (iJson.data || []).map(normalizeApiInfra).filter(x => x.poly.length >= 3);
+        const roads = (rJson.data || []).map(normalizeApiRoad).filter(x => x.line.length >= 2);
+        if (graves.length) data.graves = graves;
+        if (infra.length) data.infra = infra;
+        if (roads.length) data.roads = roads;
+        pill.innerHTML = `Live DB: <strong class="text-emerald-300">${data.graves.length} mộ • ${data.infra.length} hạ tầng • ${data.roads.length} đường</strong>`;
+        updateStats(); populateRouteTargets(); runTopologyAudit(); renderAll();
+        showToast('Đã đồng bộ dữ liệu thật từ PostgreSQL/PostGIS!');
+      } catch (err) {
+        pill.innerHTML = 'Fallback SQL: <strong class="text-amber-300">Không đọc được /api</strong>';
+        showToast('Lỗi tải Live API (' + err.message + '), đang hiển thị bản SQL mẫu.');
+      }
+    }
+        async function saveGraveChange(g, nextStatus, personPayload) {
+      const payload = nextStatus === 'Trống'
+        ? { trang_thai: 'Trống', nguoi_mat: { ho_ten: '' } }
+        : {
+            trang_thai: nextStatus,
+            nguoi_mat: {
+              ho_ten: personPayload.name,
+              ngay_sinh: personPayload.dob || null,
+              ngay_mat: personPayload.dod || null,
+              ngay_an_tang: personPayload.burial || null,
+              thong_tin_than_nhan: personPayload.kin || null
+            }
+          };
+      try {
+        const res = await fetch('/api/graves/' + encodeURIComponent(g.id), {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const json = await res.json();
+        if (!res.ok || !json.success) throw new Error(json.error || ('HTTP ' + res.status));
+        g.status = nextStatus;
+        g.person = nextStatus === 'Trống' ? undefined : { id: 'DB', ...personPayload };
+        updateStats(); populateRouteTargets(); renderInspector(); renderAll();
+        showToast('Đã lưu ' + g.id + ' (' + nextStatus + ') vào Supabase!');
+      } catch (err) {
+        showToast('Lỗi lưu DB: ' + err.message);
+      }
+    }
+    document.getElementById('btn-sync-live').addEventListener('click', loadFromLiveBackend);
+    
+
+    window.addEventListener('load', () => {
+      updateStats();
+      populateRouteTargets();
+      runTopologyAudit();
+      renderAll();
+      loadFromLiveBackend();
+    });
+  </script>
+</body>
+</html>
