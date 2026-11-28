@@ -30,24 +30,27 @@ const computeZoneCapacityReport = async (maPhanKhu = null) => {
 
   const zones = rows.map((row) => {
     const dienTichHinhHoc = Number(row.dien_tich_hinh_hoc_m2 || row.dien_tich_quy_hoach_m2);
-    const matDoToiDa = Number(row.mat_do_mo_toi_da);
-    const dienTichHaTang = Number(row.dien_tich_ha_tang_va_cach_ly_m2);
-    const dienTichGiaoThong = Number(row.dien_tich_giao_thong_m2);
+    const matDoToiDa = Number(row.mat_do_mo_toi_da) || 65;
+    const dienTichLoaiTru = Number(row.dien_tich_loai_tru_tong_m2);
+    const tongDienTichLoHienHuu = Number(row.tong_dien_tich_lo_m2);
     const dienTichDaSuDung = Number(row.dien_tich_da_su_dung_m2);
-    const dienTichMoChuan = Number(row.dien_tich_mo_chuan_tb_m2) || 3.52;
+    const dienTichMoChuan = Number(row.dien_tich_mo_chuan_tb_m2) || 3.3;
 
-    // Diện tích quy hoạch được phép bố trí mộ theo mật độ tối đa sau khi trừ hạ tầng & giao thông
-    const dienTichKhaDungTong = Math.max(
-      0,
-      Number(((dienTichHinhHoc - dienTichHaTang - dienTichGiaoThong) * (matDoToiDa / 100)).toFixed(2))
-    );
-    const dienTichConLai = Math.max(0, Number((dienTichKhaDungTong - dienTichDaSuDung).toFixed(2)));
+    // 1. Diện tích đất xây dựng mộ tối đa theo chỉ tiêu mật độ (sau khi đã trừ giao thông & hạ tầng hợp nhất)
+    const dienTichDatThuan = Math.max(0, dienTichHinhHoc - dienTichLoaiTru);
+    const dienTichKhaDungTong = Number((dienTichDatThuan * (matDoToiDa / 100)).toFixed(2));
 
-    const sucChuaToiDaUocTinh = Math.floor(dienTichKhaDungTong / dienTichMoChuan);
+    // 2. Quỹ đất khả dụng còn lại chưa chia lô (trừ toàn bộ diện tích các lô đã vạch ranh)
+    const dienTichConLai = Math.max(0, Number((dienTichKhaDungTong - tongDienTichLoHienHuu).toFixed(2)));
+
+    // 3. Sức chứa ước tính có thể quy hoạch thêm trên phần đất chưa chia lô
+    const sucChuaMoRongThem = Math.floor(dienTichConLai / dienTichMoChuan);
+    const tongSoLoHienHuu = Number(row.tong_so_lo);
+    const soLoTrongHienHuu = Number(row.so_lo_trong);
     const daDungHoacDatTruoc = Number(row.so_lo_da_an_tang) + Number(row.so_lo_dat_truoc);
-    const sucChuaConLaiUocTinh = Math.max(0, sucChuaToiDaUocTinh - daDungHoacDatTruoc);
+
     const tyLeLapDayHienHuu =
-      row.tong_so_lo > 0 ? Number(((daDungHoacDatTruoc / row.tong_so_lo) * 100).toFixed(2)) : 0;
+      tongSoLoHienHuu > 0 ? Number(((daDungHoacDatTruoc / tongSoLoHienHuu) * 100).toFixed(2)) : 0;
 
     return {
       ma_phan_khu: row.ma_phan_khu,
@@ -55,23 +58,24 @@ const computeZoneCapacityReport = async (maPhanKhu = null) => {
       loai_phan_khu: row.loai_phan_khu,
       dien_tich_quy_hoach_m2: Number(row.dien_tich_quy_hoach_m2),
       dien_tich_hinh_hoc_postgis_m2: dienTichHinhHoc,
-      dien_tich_ha_tang_va_cach_ly_m2: dienTichHaTang,
-      dien_tich_giao_thong_m2: dienTichGiaoThong,
+      dien_tich_loai_tru_ha_tang_giao_thong_m2: dienTichLoaiTru,
       mat_do_mo_toi_da_phan_tram: matDoToiDa,
       dien_tich_kha_dung_tong_m2: dienTichKhaDungTong,
+      tong_dien_tich_da_phan_lo_m2: tongDienTichLoHienHuu,
       dien_tich_da_su_dung_m2: dienTichDaSuDung,
       dien_tich_con_lai_m2: dienTichConLai,
       thong_ke_lo_hien_huu: {
-        tong_so_lo: Number(row.tong_so_lo),
-        so_lo_trong: Number(row.so_lo_trong),
+        tong_so_lo: tongSoLoHienHuu,
+        so_lo_trong: soLoTrongHienHuu,
         so_lo_da_an_tang: Number(row.so_lo_da_an_tang),
         so_lo_dat_truoc: Number(row.so_lo_dat_truoc),
         ty_le_lap_day_phan_tram: tyLeLapDayHienHuu,
       },
       suc_chua_quy_hoach: {
         dien_tich_mo_chuan_tb_m2: dienTichMoChuan,
-        suc_chua_toi_da_uoc_tinh: sucChuaToiDaUocTinh,
-        suc_chua_con_lai_uoc_tinh: sucChuaConLaiUocTinh,
+        suc_chua_toi_da_uoc_tinh: tongSoLoHienHuu + sucChuaMoRongThem,
+        suc_chua_con_lai_uoc_tinh: sucChuaMoRongThem,
+        tong_kha_nang_tiep_nhan_moi: soLoTrongHienHuu + sucChuaMoRongThem,
       },
     };
   });
